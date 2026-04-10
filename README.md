@@ -57,17 +57,16 @@ python run.py
 The application will be available at `http://localhost:5000`
 
 ### Copy and Past
+```bash
 git clone <repository-url>
 cd File-Encrypter
 source venv/bin/activate
 # source venv\Scripts\activate // on Windows
 pip install -r requirements.txt
 python run.py
+```
 
-
-### Recommended
-
-### Docker Setup
+### Docker Setup (Recommended)
 
 ```bash
 docker-compose up -d
