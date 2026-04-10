@@ -1,5 +1,4 @@
 # This project was primarily vibe coded. There may be some bugs and security issues. Keep that in mind.
-# It has only been tested on Debian-like systems.
 
 # Encrypted Vault
 
