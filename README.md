@@ -154,8 +154,54 @@ python run.py
 
 ## License
 
-[Specify your license here]
+Apache License 2.0
 
 ## Contributing
 
-[Contribution guidelines here]
+Contributions are welcome! This is a learning project, so feedback and improvements are appreciated.
+
+### How to Contribute
+
+1. **Fork the repository** on GitHub
+2. **Create a branch** for your feature or fix:
+   ```bash
+   git checkout -b feature/your-feature-name
+   ```
+3. **Make your changes** and test them locally
+4. **Commit with clear messages**:
+   ```bash
+   git commit -m "Add feature: description of what you changed"
+   ```
+5. **Push to your fork**:
+   ```bash
+   git push origin feature/your-feature-name
+   ```
+6. **Create a Pull Request** on the main repository
+
+### Development Guidelines
+
+- Follow PEP 8 style guidelines for Python code
+- Test your changes locally before submitting
+- Keep commits focused and descriptive
+- Update the README if you add new features
+- Comment complex encryption logic for clarity
+
+### Reporting Issues
+
+Found a bug? Have a suggestion? Create an issue with:
+- Clear description of the problem
+- Steps to reproduce (if it's a bug)
+- Expected vs actual behavior
+- Your system info (OS, Python version, etc.)
+
+### Areas for Contribution
+
+- Bug fixes and security improvements
+- Documentation and README improvements
+- UI/UX enhancements
+- Additional deployment options
+- Tests and error handling
+
+**Note:** Remember this is a vibe-coded project with potential security issues. If you find a security vulnerability, please discuss it responsibly.
+
+Thanks for contributing!
