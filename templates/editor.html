@@ -1,0 +1,572 @@
+{% extends "base.html" %}
+{% block title %}{{ file.name }} — Editor{% endblock %}
+
+{% block head %}
+<style>
+    .editor-page { height: calc(100vh - 56px); display: flex; flex-direction: column; }
+
+    .editor-toolbar {
+        display: flex; align-items: center; gap: .75rem;
+        padding: .5rem .75rem;
+        border-bottom: 1px solid var(--bs-border-color);
+        background: var(--bs-dark);
+        flex-shrink: 0;
+    }
+
+    .save-status {
+        font-size: .75rem;
+        display: flex; align-items: center; gap: .35rem;
+        min-width: 100px;
+    }
+    .save-status .dot {
+        width: 8px; height: 8px; border-radius: 50%;
+        display: inline-block;
+    }
+    .save-status.saved    .dot { background: #22c55e; }
+    .save-status.saving   .dot { background: #f59e0b; }
+    .save-status.unsaved  .dot { background: #ef4444; }
+    .save-status.error    .dot { background: #ef4444; }
+    .save-status.loading  .dot { background: #6b7280; }
+
+    .editor-wrap {
+        flex: 1; display: flex; position: relative;
+        min-height: 0;
+        overflow: hidden;
+    }
+
+    .line-numbers {
+        width: 50px; flex-shrink: 0;
+        background: #1a1a2e;
+        color: #6b7280;
+        font-family: 'Source Code Pro', 'DejaVu Sans Mono', 'Courier New', monospace;
+        font-size: .875rem;
+        line-height: 1.6;
+        padding: .75rem .5rem .75rem 0;
+        text-align: right;
+        overflow: hidden;
+        user-select: none;
+        border-right: 1px solid #2d2d44;
+        white-space: pre;
+    }
+
+    #editor {
+        flex: 1;
+        background: #0d1117;
+        color: #e6edf3;
+        font-family: 'Source Code Pro', 'DejaVu Sans Mono', 'Courier New', monospace;
+        font-size: .875rem;
+        line-height: 1.6;
+        padding: .75rem 1rem;
+        border: none; outline: none;
+        resize: none;
+        overflow: auto;
+        white-space: pre;
+        tab-size: 4;
+        -moz-tab-size: 4;
+    }
+
+    #editor:focus { box-shadow: none; }
+
+    /* Scrollbar */
+    #editor::-webkit-scrollbar { width: 10px; height: 10px; }
+    #editor::-webkit-scrollbar-track { background: #161b22; }
+    #editor::-webkit-scrollbar-thumb { background: #30363d; border-radius: 5px; }
+    #editor::-webkit-scrollbar-thumb:hover { background: #484f58; }
+
+    .editor-footer {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: .25rem .75rem;
+        border-top: 1px solid var(--bs-border-color);
+        background: #161b22;
+        font-size: .75rem;
+        color: #8b949e;
+        flex-shrink: 0;
+        flex-wrap: wrap;
+        gap: .25rem;
+    }
+
+    .word-wrap-toggle {
+        cursor: pointer;
+        padding: 2px 8px;
+        border-radius: 3px;
+        user-select: none;
+    }
+    .word-wrap-toggle:hover { background: #30363d; }
+    .word-wrap-toggle.active { color: #58a6ff; }
+
+    /* Link bar – floats inside editor area near cursor */
+    .link-bar {
+        display: none;
+        align-items: center; gap: .5rem;
+        padding: .3rem .75rem;
+        background: rgba(28, 33, 40, 0.95);
+        border: 1px solid #30363d;
+        border-radius: 6px;
+        font-size: .8rem;
+        position: absolute;
+        z-index: 10;
+        left: 60px;
+        max-width: calc(100% - 80px);
+        box-shadow: 0 4px 12px rgba(0,0,0,.4);
+        pointer-events: auto;
+        backdrop-filter: blur(8px);
+    }
+    .link-bar.visible { display: flex; }
+    .link-bar a {
+        color: #58a6ff;
+        text-decoration: underline;
+        max-width: 80%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        padding: 4px 0;
+    }
+    .link-bar a:hover { color: #79c0ff; }
+    .link-bar .link-hint {
+        color: #6b7280;
+        font-size: .7rem;
+        margin-left: auto;
+    }
+
+    /* Mobile editor adjustments */
+    @media (max-width: 576px) {
+        .line-numbers {
+            width: 36px;
+            font-size: 16px;       /* match editor font-size to keep lines aligned */
+            padding-right: .25rem;
+            padding-top: .5rem;    /* match editor padding */
+            padding-bottom: .5rem;
+        }
+        #editor { font-size: 16px; padding: .5rem; }  /* 16px prevents iOS zoom on focus */
+        .editor-toolbar { gap: .5rem; padding: .35rem .5rem; }
+        .editor-footer { font-size: .65rem; padding: .2rem .5rem; }
+        .link-bar { font-size: .75rem; padding: .35rem .5rem; left: 44px; max-width: calc(100% - 56px); }
+        .link-bar a { max-width: 65%; font-size: .75rem; padding: 6px 0; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="editor-page">
+    <!-- Toolbar -->
+    <div class="editor-toolbar">
+        <a href="{{ url_for('explorer') }}{% if file.parent_id is not none %}?parent_id={{ file.parent_id }}{% endif %}" class="btn btn-sm btn-outline-secondary">
+            <i class="fas fa-arrow-left"></i>
+        </a>
+        <span class="text-truncate fw-semibold flex-grow-1" title="{{ file.name }}">{{ file.name }}</span>
+
+        <div class="save-status loading" id="saveStatus">
+            <span class="dot"></span>
+            <span class="save-text">Loading…</span>
+        </div>
+
+        <!-- File navigation -->
+        <div class="d-flex align-items-center gap-1">
+            <span style="font-size:.7rem;color:#8b949e;white-space:nowrap" id="navPos"></span>
+            <button class="btn btn-sm btn-outline-secondary" id="prevBtn" title="Previous" disabled style="min-width:28px;padding:2px 6px">
+                <i class="fas fa-chevron-left"></i>
+            </button>
+            <button class="btn btn-sm btn-outline-secondary" id="nextBtn" title="Next" disabled style="min-width:28px;padding:2px 6px">
+                <i class="fas fa-chevron-right"></i>
+            </button>
+            <button class="btn btn-sm btn-outline-secondary" id="shuffleBtn" title="Shuffle" style="min-width:28px;padding:2px 6px">
+                <i class="fas fa-random"></i>
+            </button>
+        </div>
+
+        <a href="{{ url_for('download_file', file_id=file.id) }}" class="btn btn-sm btn-outline-primary" title="Download">
+            <i class="fas fa-download"></i>
+        </a>
+    </div>
+
+    <!-- Editor area -->
+    <div class="editor-wrap">
+        <div class="line-numbers" id="lineNumbers">1</div>
+        <textarea id="editor" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off"></textarea>
+        <!-- Link bar (floats near cursor when on a URL) -->
+        <div class="link-bar" id="linkBar">
+            <i class="fas fa-link" style="color:#6b7280"></i>
+            <a id="linkBarUrl" href="#" target="_blank" rel="noopener noreferrer"></a>
+            <span class="link-hint" id="linkHint"></span>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="editor-footer">
+        <div>
+            <span id="cursorPos">Ln 1, Col 1</span>
+            <span class="mx-2">|</span>
+            <span id="fileSize">0 B</span>
+            <span class="mx-2">|</span>
+            <span id="lineCount">0 lines</span>
+        </div>
+        <div class="d-flex align-items-center gap-3">
+            <span class="word-wrap-toggle" id="wrapToggle" title="Toggle word wrap">
+                <i class="fas fa-text-width me-1"></i>Wrap
+            </span>
+            <span>UTF-8</span>
+        </div>
+    </div>
+</div>
+
+<script>
+(function() {
+    const FILE_ID = {{ file.id }};
+    const textUrl = '/api/file/' + FILE_ID + '/text';
+
+    const editor       = document.getElementById('editor');
+    const lineNumbers  = document.getElementById('lineNumbers');
+    const saveStatus   = document.getElementById('saveStatus');
+    const cursorPos    = document.getElementById('cursorPos');
+    const fileSize     = document.getElementById('fileSize');
+    const lineCount    = document.getElementById('lineCount');
+    const wrapToggle   = document.getElementById('wrapToggle');
+
+    let originalContent = '';
+    let lastSavedContent = '';
+    let autoSaveTimer = null;
+    let saving = false;
+
+    // ── Status helpers ──────────────────────────────────────────────
+    function setStatus(state, text) {
+        saveStatus.className = 'save-status ' + state;
+        saveStatus.querySelector('.save-text').textContent = text || state;
+    }
+
+    // ── Load content ────────────────────────────────────────────────
+    async function loadContent() {
+        setStatus('loading', 'Loading…');
+        try {
+            const r = await fetch(textUrl, { credentials: 'same-origin' });
+            const data = await r.json();
+            if (data.error) { setStatus('error', 'Error: ' + data.error); return; }
+            editor.value = data.content;
+            originalContent = data.content;
+            lastSavedContent = data.content;
+            updateLineNumbers();
+            updateFooter();
+            setStatus('saved', 'Saved');
+        } catch (e) {
+            setStatus('error', 'Load failed');
+            console.error(e);
+        }
+    }
+
+    // ── Save content ────────────────────────────────────────────────
+    async function saveContent() {
+        if (saving) return;
+        const content = editor.value;
+        if (content === lastSavedContent) {
+            setStatus('saved', 'Saved');
+            return;
+        }
+        saving = true;
+        setStatus('saving', 'Saving…');
+        try {
+            const r = await fetch(textUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
+                body: JSON.stringify({ content }),
+            });
+            const data = await r.json();
+            if (data.error) {
+                setStatus('error', 'Save failed');
+                console.error('Save error:', data.error);
+            } else {
+                lastSavedContent = content;
+                setStatus('saved', 'Saved');
+                updateFooter();
+            }
+        } catch (e) {
+            setStatus('error', 'Save failed');
+            console.error(e);
+        } finally {
+            saving = false;
+        }
+    }
+
+    // ── Auto-save (debounced 2s) ────────────────────────────────────
+    function scheduleAutoSave() {
+        clearTimeout(autoSaveTimer);
+        if (editor.value !== lastSavedContent) {
+            setStatus('unsaved', 'Unsaved');
+        }
+        autoSaveTimer = setTimeout(() => saveContent(), 2000);
+    }
+
+    // ── Line numbers ────────────────────────────────────────────────
+    function updateLineNumbers() {
+        const lines = editor.value.split('\n').length;
+        const nums = [];
+        for (let i = 1; i <= lines; i++) nums.push(i);
+        lineNumbers.textContent = nums.join('\n');
+    }
+
+    // ── Footer info ─────────────────────────────────────────────────
+    function updateFooter() {
+        const text = editor.value;
+        const bytes = new Blob([text]).size;
+        const lines = text.split('\n').length;
+        fileSize.textContent = humanSize(bytes);
+        lineCount.textContent = lines + ' line' + (lines !== 1 ? 's' : '');
+    }
+
+    function updateCursor() {
+        const pos = editor.selectionStart;
+        const before = editor.value.substring(0, pos);
+        const line = before.split('\n').length;
+        const col = pos - before.lastIndexOf('\n');
+        cursorPos.textContent = 'Ln ' + line + ', Col ' + col;
+    }
+
+    function humanSize(bytes) {
+        if (bytes === 0) return '0 B';
+        const units = ['B', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(1024));
+        const v = bytes / Math.pow(1024, i);
+        return v.toFixed(i === 0 ? 0 : 1) + ' ' + units[i];
+    }
+
+    // ── Link detection ──────────────────────────────────────────────
+    const linkBar    = document.getElementById('linkBar');
+    const linkBarUrl = document.getElementById('linkBarUrl');
+    const linkHint   = document.getElementById('linkHint');
+    const urlRegex   = /https?:\/\/[^\s<>"'`\)\]]+/gi;
+    const isMobile   = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+    linkHint.textContent = isMobile ? 'Tap link to open' : 'Ctrl+click to open';
+
+    function getUrlAtPosition(text, pos) {
+        // Find the line containing the cursor
+        const lineStart = text.lastIndexOf('\n', pos - 1) + 1;
+        let lineEnd = text.indexOf('\n', pos);
+        if (lineEnd === -1) lineEnd = text.length;
+        const line = text.substring(lineStart, lineEnd);
+        const cursorInLine = pos - lineStart;
+
+        // Find URLs in this line
+        urlRegex.lastIndex = 0;
+        let match;
+        while ((match = urlRegex.exec(line)) !== null) {
+            const start = match.index;
+            const end = start + match[0].length;
+            if (cursorInLine >= start && cursorInLine <= end) {
+                // Strip trailing punctuation that isn't part of the URL
+                let url = match[0].replace(/[.,;:!?)\]]+$/, '');
+                return url;
+            }
+        }
+        return null;
+    }
+
+    function updateLinkBar() {
+        const url = getUrlAtPosition(editor.value, editor.selectionStart);
+        if (url) {
+            linkBarUrl.href = url;
+            linkBarUrl.textContent = url;
+            linkBar.classList.add('visible');
+            // Position near cursor line
+            positionLinkBar();
+        } else {
+            linkBar.classList.remove('visible');
+        }
+    }
+
+    function positionLinkBar() {
+        // Compute which line the cursor is on
+        const pos = editor.selectionStart;
+        const before = editor.value.substring(0, pos);
+        const cursorLine = before.split('\n').length;
+        const lineHeight = parseFloat(getComputedStyle(editor).lineHeight);
+        const editorRect = editor.getBoundingClientRect();
+        const wrapRect = editor.parentElement.getBoundingClientRect();
+
+        // Y offset: line position minus scroll, relative to editor-wrap
+        const lineTop = (cursorLine - 1) * lineHeight + parseFloat(getComputedStyle(editor).paddingTop);
+        const relY = lineTop - editor.scrollTop + (editorRect.top - wrapRect.top);
+        // Place below the line; if near bottom, place above
+        const barHeight = 36;
+        const spaceBelow = wrapRect.height - relY - lineHeight;
+        if (spaceBelow > barHeight + 8) {
+            linkBar.style.top = (relY + lineHeight + 4) + 'px';
+            linkBar.style.bottom = 'auto';
+        } else {
+            linkBar.style.top = Math.max(4, relY - barHeight - 4) + 'px';
+            linkBar.style.bottom = 'auto';
+        }
+    }
+
+    // Ctrl+click / Cmd+click opens URL (desktop); tap link bar on mobile
+    editor.addEventListener('click', (e) => {
+        updateCursor();
+        updateLinkBar();
+        if (e.ctrlKey || e.metaKey) {
+            const url = getUrlAtPosition(editor.value, editor.selectionStart);
+            if (url) {
+                window.open(url, '_blank', 'noopener,noreferrer');
+            }
+        }
+    });
+    // On mobile, update link bar after touch selection changes
+    editor.addEventListener('touchend', () => {
+        setTimeout(() => { updateCursor(); updateLinkBar(); }, 50);
+    });
+
+    // ── Sync scroll between line numbers and editor ─────────────────
+    editor.addEventListener('scroll', () => {
+        lineNumbers.scrollTop = editor.scrollTop;
+    });
+
+    // ── Event listeners ─────────────────────────────────────────────
+    editor.addEventListener('input', () => {
+        updateLineNumbers();
+        updateFooter();
+        updateLinkBar();
+        scheduleAutoSave();
+    });
+    editor.addEventListener('keyup', (e) => {
+        updateCursor();
+        updateLinkBar();
+    });
+    editor.addEventListener('select', () => {
+        updateCursor();
+        updateLinkBar();
+    });
+
+    // Tab key inserts a tab instead of moving focus
+    editor.addEventListener('keydown', (e) => {
+        if (e.key === 'Tab') {
+            e.preventDefault();
+            const start = editor.selectionStart;
+            const end = editor.selectionEnd;
+            if (e.shiftKey) {
+                // Un-indent: remove leading tab/spaces on current line
+                const before = editor.value.substring(0, start);
+                const lineStart = before.lastIndexOf('\n') + 1;
+                const linePrefix = editor.value.substring(lineStart, start);
+                if (linePrefix.startsWith('\t')) {
+                    editor.value = editor.value.substring(0, lineStart) + editor.value.substring(lineStart + 1);
+                    editor.selectionStart = editor.selectionEnd = start - 1;
+                } else if (linePrefix.startsWith('    ')) {
+                    editor.value = editor.value.substring(0, lineStart) + editor.value.substring(lineStart + 4);
+                    editor.selectionStart = editor.selectionEnd = start - 4;
+                }
+            } else {
+                editor.value = editor.value.substring(0, start) + '\t' + editor.value.substring(end);
+                editor.selectionStart = editor.selectionEnd = start + 1;
+            }
+            updateLineNumbers();
+            scheduleAutoSave();
+        }
+
+        // Ctrl+S / Cmd+S — manual save
+        if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+            e.preventDefault();
+            clearTimeout(autoSaveTimer);
+            saveContent();
+        }
+    });
+
+    // Word wrap toggle
+    let wordWrap = false;
+    wrapToggle.addEventListener('click', () => {
+        wordWrap = !wordWrap;
+        wrapToggle.classList.toggle('active', wordWrap);
+        editor.style.whiteSpace = wordWrap ? 'pre-wrap' : 'pre';
+        editor.style.overflowX = wordWrap ? 'hidden' : 'auto';
+    });
+
+    // Save before leaving
+    window.addEventListener('beforeunload', (e) => {
+        if (editor.value !== lastSavedContent) {
+            // Fire off a save via sendBeacon
+            navigator.sendBeacon(textUrl, new Blob(
+                [JSON.stringify({ content: editor.value })],
+                { type: 'application/json' }
+            ));
+        }
+    });
+
+    // Save on visibility change (tab switch, minimize)
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden && editor.value !== lastSavedContent) {
+            saveContent();
+        }
+    });
+
+    // ── Init ────────────────────────────────────────────────────────
+    loadContent();
+
+    // ── File navigation (prev / next / shuffle) ─────────────────────
+    const prevBtn    = document.getElementById('prevBtn');
+    const nextBtn    = document.getElementById('nextBtn');
+    const shuffleBtn = document.getElementById('shuffleBtn');
+    const navPos     = document.getElementById('navPos');
+
+    let shuffleOn = localStorage.getItem('vault_shuffle') === '1';
+    let siblingData = null;
+
+    // Determine shuffle root: URL ?from= param > localStorage > API fallback
+    const urlParams = new URLSearchParams(window.location.search);
+    let rootParentId = null;
+    if (urlParams.has('from')) {
+        rootParentId = urlParams.get('from') === 'root' ? 'null' : urlParams.get('from');
+        localStorage.setItem('vault_shuffle_root', rootParentId);
+    } else {
+        rootParentId = localStorage.getItem('vault_shuffle_root');
+    }
+
+    function rootQS() {
+        if (rootParentId === null || rootParentId === undefined) return '';
+        return (rootParentId === 'null') ? '?root=null' : '?root=' + rootParentId;
+    }
+
+    if (shuffleOn) shuffleBtn.classList.add('active');
+    shuffleBtn.style.cssText += shuffleOn ? 'color:#fff;background:var(--bs-primary);border-color:var(--bs-primary)' : '';
+
+    shuffleBtn.addEventListener('click', () => {
+        shuffleOn = !shuffleOn;
+        shuffleBtn.classList.toggle('active', shuffleOn);
+        localStorage.setItem('vault_shuffle', shuffleOn ? '1' : '0');
+        if (shuffleOn) {
+            shuffleBtn.style.color = '#fff';
+            shuffleBtn.style.background = 'var(--bs-primary)';
+            shuffleBtn.style.borderColor = 'var(--bs-primary)';
+        } else {
+            shuffleBtn.style.color = '';
+            shuffleBtn.style.background = '';
+            shuffleBtn.style.borderColor = '';
+        }
+    });
+
+    fetch('/api/siblings/' + FILE_ID + rootQS(), { credentials: 'same-origin' })
+        .then(r => r.json())
+        .then(data => {
+            siblingData = data;
+            if (rootParentId === null && data.root_parent_id !== undefined) {
+                rootParentId = (data.root_parent_id === null) ? 'null' : String(data.root_parent_id);
+                localStorage.setItem('vault_shuffle_root', rootParentId);
+            }
+            if (data.total > 0) navPos.textContent = data.position + ' / ' + data.total;
+            if (data.prev_id) {
+                prevBtn.disabled = false;
+                prevBtn.addEventListener('click', () => { window.location.href = '/editor/' + data.prev_id; });
+            }
+            if (data.next_id || data.total > 1) nextBtn.disabled = false;
+            nextBtn.addEventListener('click', goNextEditor);
+        })
+        .catch(() => {});
+
+    function goNextEditor() {
+        if (shuffleOn) {
+            fetch('/api/random-sibling/' + FILE_ID + rootQS(), { credentials: 'same-origin' })
+                .then(r => r.json())
+                .then(data => { if (data.file_id) window.location.href = '/editor/' + data.file_id; })
+                .catch(() => {});
+        } else if (siblingData && siblingData.next_id) {
+            window.location.href = '/editor/' + siblingData.next_id;
+        }
+    }
+})();
+</script>
+{% endblock %}

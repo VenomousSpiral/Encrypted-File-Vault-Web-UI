@@ -1,0 +1,40 @@
+# Virtual environments
+venv/
+env/
+ENV/
+.venv
+*.pyc
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Data and vault
+data/
+vault/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Environment variables
+.env
+.env.local
+
+# Flask
+instance/
+.webassets-cache
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Temporary files
+*.tmp
+*.log

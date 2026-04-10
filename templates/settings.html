@@ -1,0 +1,204 @@
+{% extends "base.html" %}
+{% block title %}Settings — Encrypted Vault{% endblock %}
+
+{% block content %}
+<div class="container py-4" style="max-width:600px">
+    <div class="d-flex align-items-center gap-3 mb-4">
+        <a href="{{ url_for('explorer') }}" class="btn btn-sm btn-outline-secondary">
+            <i class="fas fa-arrow-left"></i>
+        </a>
+        <h4 class="mb-0">
+            <i class="fas fa-cog me-2 text-primary"></i>Playback Settings
+        </h4>
+    </div>
+
+    <div class="card bg-dark border-secondary">
+        <div class="card-body">
+            <p class="text-secondary small mb-4">
+                These defaults apply automatically when you open any video.
+                Per-video overrides are remembered separately.
+            </p>
+
+            <!-- Default Audio Language -->
+            <div class="mb-3">
+                <label for="audioLang" class="form-label">
+                    <i class="fas fa-volume-up me-1"></i>Default Audio Language
+                </label>
+                <input type="text" id="audioLang" class="form-control bg-dark text-light border-secondary"
+                    value="{{ prefs.default_audio_lang }}"
+                    placeholder="e.g. eng, jpn, spa (leave blank for first track)">
+                <div class="form-text text-secondary">
+                    3-letter language code (ISO 639-2). The player will auto-select the
+                    first audio track matching this language.
+                </div>
+            </div>
+
+            <!-- Default Subtitle Language -->
+            <div class="mb-3">
+                <label for="subLang" class="form-label">
+                    <i class="fas fa-closed-captioning me-1"></i>Default Subtitle Language
+                </label>
+                <input type="text" id="subLang" class="form-control bg-dark text-light border-secondary"
+                    value="{{ prefs.default_subtitle_lang }}" placeholder="e.g. eng, jpn, spa (leave blank for off)">
+                <div class="form-text text-secondary">
+                    3-letter language code. The player will auto-enable subtitles in this
+                    language when available. Leave blank to keep subtitles off by default.
+                </div>
+            </div>
+
+            <!-- Default Subtitle Offset -->
+            <div class="mb-3">
+                <label for="subOffset" class="form-label">
+                    <i class="fas fa-clock me-1"></i>Default Subtitle Offset
+                </label>
+                <div class="d-flex align-items-center gap-3">
+                    <input type="range" id="subOffset" class="form-range flex-grow-1" min="-10" max="10" step="0.5"
+                        value="{{ prefs.default_subtitle_offset }}">
+                    <span id="subOffsetDisplay" class="badge bg-secondary" style="min-width:55px;font-size:.85rem">
+                        {{ '%+.1f'|format(prefs.default_subtitle_offset) }}s
+                    </span>
+                </div>
+                <div class="form-text text-secondary">
+                    Positive = subtitles appear later, negative = earlier.
+                </div>
+            </div>
+
+            <!-- Skip Amount -->
+            <div class="mb-4">
+                <label for="skipAmount" class="form-label">
+                    <i class="fas fa-forward me-1"></i>Skip Forward/Back Amount
+                </label>
+                <div class="d-flex align-items-center gap-3">
+                    <input type="range" id="skipAmount" class="form-range flex-grow-1" min="5" max="120" step="5"
+                        value="{{ prefs.skip_amount }}">
+                    <span id="skipAmountDisplay" class="badge bg-secondary" style="min-width:45px;font-size:.85rem">
+                        {{ prefs.skip_amount }}s
+                    </span>
+                </div>
+                <div class="form-text text-secondary">
+                    Controls how many seconds the skip buttons jump (5–120).
+                </div>
+            </div>
+
+            <!-- Audio Cache Mode -->
+            <div class="mb-4">
+                <label for="audioCacheMode" class="form-label">
+                    <i class="fas fa-database me-1"></i>Audio Cache Mode
+                </label>
+                <select id="audioCacheMode" class="form-select bg-dark text-light border-secondary">
+                    <option value="keep" {{ 'selected' if prefs.audio_cache_mode=='keep' }}>
+                        Keep (no caching)
+                    </option>
+                    <option value="save" {{ 'selected' if prefs.audio_cache_mode=='save' }}>
+                        Save (cache transcoded audio)
+                    </option>
+                    <option value="overwrite" {{ 'selected' if prefs.audio_cache_mode=='overwrite' }}>
+                        Overwrite (re-encode for browser)
+                    </option>
+                </select>
+                <div class="form-text text-secondary">
+                    <strong>Keep</strong>: Re-encode non-AAC audio every time you play.
+                    <strong>Save</strong>: Store transcoded AAC next to the original (faster future plays, uses extra
+                    vault space).
+                    <strong>Overwrite</strong>: Re-encode the file to H.264 + AAC after first play (permanent,
+                    browser-compatible).
+                </div>
+            </div>
+
+            <div class="d-flex gap-2">
+                <button id="saveBtn" class="btn btn-primary">
+                    <i class="fas fa-save me-1"></i>Save Defaults
+                </button>
+                <button id="clearLocalBtn" class="btn btn-outline-secondary">
+                    <i class="fas fa-trash me-1"></i>Clear Per-Video Overrides
+                </button>
+            </div>
+
+            <div id="saveMsg" class="d-none mt-3 alert alert-success py-2 small">
+                Settings saved.
+            </div>
+        </div>
+    </div>
+
+    <!-- Key Export -->
+    <div class="card bg-dark border-secondary mt-4">
+        <div class="card-body">
+            <h5 class="card-title mb-3">
+                <i class="fas fa-key me-2 text-warning"></i>Encryption Keys
+            </h5>
+            <p class="text-secondary small mb-3">
+                Download a backup of your encryption keys. You need this file to
+                transfer or restore your vault on another machine. <strong>Keep it
+                    secret</strong> — anyone with these keys can read your database metadata.
+            </p>
+            <a href="{{ url_for('api_export_keys') }}" class="btn btn-outline-warning">
+                <i class="fas fa-download me-1"></i>Download Key Backup
+            </a>
+        </div>
+    </div>
+</div>
+
+<script>
+    (function () {
+        const offsetSlider = document.getElementById('subOffset');
+        const offsetDisplay = document.getElementById('subOffsetDisplay');
+        const skipSlider = document.getElementById('skipAmount');
+        const skipDisplay = document.getElementById('skipAmountDisplay');
+        const saveBtn = document.getElementById('saveBtn');
+        const clearBtn = document.getElementById('clearLocalBtn');
+        const saveMsg = document.getElementById('saveMsg');
+
+        offsetSlider.addEventListener('input', () => {
+            const v = parseFloat(offsetSlider.value);
+            offsetDisplay.textContent = (v >= 0 ? '+' : '') + v.toFixed(1) + 's';
+        });
+        skipSlider.addEventListener('input', () => {
+            skipDisplay.textContent = skipSlider.value + 's';
+        });
+
+        saveBtn.addEventListener('click', () => {
+            const payload = {
+                default_audio_lang: document.getElementById('audioLang').value.trim(),
+                default_subtitle_lang: document.getElementById('subLang').value.trim(),
+                default_subtitle_offset: parseFloat(offsetSlider.value),
+                skip_amount: parseInt(skipSlider.value),
+                audio_cache_mode: document.getElementById('audioCacheMode').value,
+            };
+            fetch('/api/preferences', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
+                body: JSON.stringify(payload),
+            })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        saveMsg.textContent = 'Settings saved.';
+                        saveMsg.className = 'mt-3 alert alert-success py-2 small';
+                    } else {
+                        saveMsg.textContent = 'Error: ' + (data.error || 'Unknown');
+                        saveMsg.className = 'mt-3 alert alert-danger py-2 small';
+                    }
+                    saveMsg.classList.remove('d-none');
+                    setTimeout(() => saveMsg.classList.add('d-none'), 3000);
+                });
+        });
+
+        clearBtn.addEventListener('click', () => {
+            Promise.all([
+                fetch('/api/video/prefs/clear', { method: 'POST', credentials: 'same-origin' }).then(r => r.json()),
+                fetch('/api/audio-cache/clear-all', { method: 'POST', credentials: 'same-origin' }).then(r => r.json()),
+            ])
+                .then(([prefsData, cacheData]) => {
+                    const parts = [];
+                    if (prefsData.cleared) parts.push(prefsData.cleared + ' per-video override(s)');
+                    if (cacheData.cleared) parts.push(cacheData.cleared + ' cached audio file(s)');
+                    saveMsg.textContent = parts.length ? 'Cleared ' + parts.join(' and ') + '.' : 'Nothing to clear.';
+                    saveMsg.className = 'mt-3 alert alert-info py-2 small';
+                    saveMsg.classList.remove('d-none');
+                    setTimeout(() => saveMsg.classList.add('d-none'), 3000);
+                });
+        });
+    })();
+</script>
+{% endblock %}

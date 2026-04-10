@@ -1,0 +1,18 @@
+services:
+  vault:
+    build: .
+    container_name: encrypted-vault
+    restart: unless-stopped
+    ports:
+      - "${PORT:-5000}:5000"
+    volumes:
+      - ${HOST_DATA_DIR:-.}:${DOCKER_DATA_DIR:-/app/data}
+    tmpfs:
+      - /tmp/hls:rw,noexec,nosuid,size=${TMPFS_SIZE:-8g}
+    env_file:
+      - .env
+    environment:
+      - DATA_DIR=${DOCKER_DATA_DIR:-/app/data}
+      - TEMP_DIR=/tmp/hls
+
+# Using a host bind mount for the vault data; no named volume required.

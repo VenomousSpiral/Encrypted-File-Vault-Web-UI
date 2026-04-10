@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Login — Encrypted Vault{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-center align-items-center" style="min-height:85vh">
+    <div class="card bg-dark border-secondary shadow" style="width:380px">
+        <div class="card-body p-4">
+            <div class="text-center mb-4">
+                <i class="fas fa-shield-halved fa-3x text-primary mb-3"></i>
+                <h4 class="fw-semibold">Encrypted Vault</h4>
+                <p class="text-secondary small mb-0">Enter credentials to unlock</p>
+            </div>
+            <form method="POST" autocomplete="off">
+                <div class="mb-3">
+                    <label class="form-label small text-secondary">Username</label>
+                    <input type="text" name="username" class="form-control" required autofocus>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small text-secondary">Password</label>
+                    <input type="password" name="password" class="form-control" required>
+                </div>
+                <button class="btn btn-primary w-100 mt-1">
+                    <i class="fas fa-lock-open me-2"></i>Unlock
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

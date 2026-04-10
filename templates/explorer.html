@@ -1,0 +1,296 @@
+{% extends "base.html" %}
+{% block title %}Files — Encrypted Vault{% endblock %}
+
+{% block content %}
+<script>window.__SORT_PREF = '{{ sort_preference|default("name", true) }}';</script>
+<!-- Toolbar -->
+<div class="toolbar px-3 py-2 border-bottom border-secondary bg-dark sticky-top">
+  <div class="d-flex align-items-center">
+    <div id="breadcrumbs" class="d-flex align-items-center flex-grow-1 overflow-hidden me-2"></div>
+    <!-- Collapse toggle for mobile -->
+    <button class="btn btn-sm btn-outline-secondary d-sm-none" type="button" data-bs-toggle="collapse"
+      data-bs-target="#toolbarActions" aria-label="Toggle toolbar">
+      <i class="fas fa-ellipsis-v"></i>
+    </button>
+  </div>
+  <div class="collapse d-sm-flex mt-2 mt-sm-0" id="toolbarActions">
+    <div class="d-flex gap-2 flex-shrink-0 align-items-center flex-wrap">
+      <!-- Search -->
+      <div class="position-relative" id="searchWrap">
+        <input type="text" id="searchInput" class="form-control form-control-sm bg-dark text-light border-secondary"
+          placeholder="Search files…" style="width:180px;padding-left:28px" autocomplete="off">
+        <i class="fas fa-search position-absolute text-secondary"
+          style="left:8px;top:50%;transform:translateY(-50%);font-size:.75rem"></i>
+        <button id="searchClear" class="btn btn-link btn-sm text-secondary position-absolute p-0 d-none"
+          style="right:4px;top:50%;transform:translateY(-50%);font-size:.7rem" title="Clear">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      <!-- Sort -->
+      <div class="dropdown">
+        <button class="btn btn-sm btn-outline-secondary dropdown-toggle" id="sortBtn" data-bs-toggle="dropdown"
+          title="Sort">
+          <i class="fas fa-sort me-1"></i><span class="d-none d-sm-inline" id="sortLabel">Name</span>
+        </button>
+        <ul class="dropdown-menu dropdown-menu-end dropdown-menu-dark">
+          <li><a class="dropdown-item active" href="#" data-sort="name"><i
+                class="fas fa-font fa-fw me-2"></i>Alphabetical</a></li>
+          <li><a class="dropdown-item" href="#" data-sort="recent"><i class="fas fa-clock fa-fw me-2"></i>Recently
+              Accessed</a></li>
+          <li><a class="dropdown-item" href="#" data-sort="added"><i
+                class="fas fa-calendar-plus fa-fw me-2"></i>Recently Added</a></li>
+          <li><a class="dropdown-item" href="#" data-sort="size"><i class="fas fa-weight-hanging fa-fw me-2"></i>Largest
+              First</a></li>
+        </ul>
+      </div>
+      <button class="btn btn-sm btn-outline-secondary" onclick="showNewFolderModal()" title="New folder">
+        <i class="fas fa-folder-plus me-1"></i><span class="d-none d-sm-inline">New Folder</span>
+      </button>
+      <button class="btn btn-sm btn-outline-secondary" onclick="showNewFileModal()" title="New text file">
+        <i class="fas fa-file-pen me-1"></i><span class="d-none d-sm-inline">New File</span>
+      </button>
+      <button class="btn btn-sm btn-outline-secondary" onclick="enterSelectMode()" title="Select files">
+        <i class="fas fa-check-double me-1"></i><span class="d-none d-sm-inline">Select</span>
+      </button>
+      <button class="btn btn-sm btn-outline-secondary position-relative" onclick="openQueuePanel()"
+        title="Re-encode Queue" id="queueBtn">
+        <i class="fas fa-tasks me-1"></i><span class="d-none d-sm-inline">Queue</span>
+        <span id="queueBadge" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-primary"
+          style="display:none;font-size:.6rem"></span>
+      </button>
+      <button class="btn btn-sm btn-primary" onclick="document.getElementById('fileInput').click()"
+        title="Upload files">
+        <i class="fas fa-upload me-1"></i><span class="d-none d-sm-inline">Upload</span>
+      </button>
+      <button class="btn btn-sm btn-outline-primary" onclick="document.getElementById('folderInput').click()"
+        title="Upload folder">
+        <i class="fas fa-folder-open me-1"></i><span class="d-none d-sm-inline">Folder</span>
+      </button>
+      <input type="file" id="fileInput" multiple hidden onchange="uploadFiles(this.files)">
+      <input type="file" id="folderInput" hidden webkitdirectory onchange="uploadFiles(this.files)">
+    </div>
+  </div>
+</div>
+
+<!-- Upload progress -->
+<div id="uploadProgress" class="px-3 py-2 bg-dark border-bottom border-secondary" style="display:none">
+  <div class="d-flex align-items-center justify-content-between mb-1">
+    <small id="uploadFileName" class="text-truncate text-secondary" style="max-width:70%"></small>
+    <small id="uploadPercent" class="text-secondary"></small>
+  </div>
+  <div class="progress" style="height:3px">
+    <div id="uploadBar" class="progress-bar bg-primary" style="width:0%"></div>
+  </div>
+</div>
+
+<!-- File list -->
+<div id="fileList" class="file-list"></div>
+
+<!-- Empty state -->
+<div id="emptyState" class="text-center text-secondary py-5" style="display:none">
+  <i class="fas fa-folder-open fa-4x mb-3 opacity-25"></i>
+  <p class="mb-1">This folder is empty</p>
+  <p class="small">Drop files here or click Upload</p>
+</div>
+
+<!-- Loading -->
+<div id="loadingState" class="text-center text-secondary py-5">
+  <div class="spinner-border spinner-border-sm me-2" role="status"></div>Loading…
+</div>
+
+<!-- Drop zone overlay -->
+<div id="dropZone" class="drop-zone" style="display:none">
+  <div class="drop-zone-inner">
+    <i class="fas fa-cloud-arrow-up fa-4x mb-3"></i>
+    <h5>Drop files to upload</h5>
+  </div>
+</div>
+
+<!-- Context menu -->
+<div id="contextMenu" class="context-menu shadow" style="display:none">
+  <div class="ctx-item" data-action="open"><i class="fas fa-external-link-alt fa-fw"></i> Open</div>
+  <div class="ctx-item" data-action="edit" id="ctxEdit"><i class="fas fa-file-pen fa-fw"></i> Edit</div>
+  <div class="ctx-item" data-action="download" id="ctxDownload"><i class="fas fa-download fa-fw"></i> Download</div>
+  <div class="ctx-sep"></div>
+  <div class="ctx-item" data-action="rename"><i class="fas fa-pen fa-fw"></i> Rename</div>
+  <div class="ctx-item" data-action="move"><i class="fas fa-arrows-alt fa-fw"></i> Move</div>
+  <div class="ctx-sep"></div>
+  <div class="ctx-item" data-action="reencode" id="ctxReencode"><i class="fas fa-sync fa-fw"></i> Re-encode for Browser
+  </div>
+  <div class="ctx-item" data-action="reencode-dir" id="ctxReencodeDir"><i class="fas fa-film fa-fw"></i> Re-encode All
+    Videos</div>
+  <div class="ctx-item" data-action="clear-audio-cache" id="ctxClearAudioCache"><i class="fas fa-database fa-fw"></i>
+    Clear Audio Cache</div>
+  <div class="ctx-sep" id="ctxVideoSep"></div>
+  <div class="ctx-item text-danger" data-action="delete"><i class="fas fa-trash fa-fw"></i> Delete</div>
+</div>
+
+<!-- New Folder modal -->
+<div class="modal fade" id="newFolderModal" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content bg-dark border-secondary">
+      <div class="modal-header border-secondary">
+        <h6 class="modal-title">New Folder</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="text" id="folderNameInput" class="form-control" placeholder="Folder name">
+      </div>
+      <div class="modal-footer border-secondary">
+        <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-primary btn-sm" onclick="createFolder()">Create</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Rename modal -->
+<div class="modal fade" id="renameModal" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content bg-dark border-secondary">
+      <div class="modal-header border-secondary">
+        <h6 class="modal-title">Rename</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="text" id="renameInput" class="form-control">
+      </div>
+      <div class="modal-footer border-secondary">
+        <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-primary btn-sm" onclick="doRename()">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Move modal -->
+<div class="modal fade" id="moveModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content bg-dark border-secondary">
+      <div class="modal-header border-secondary">
+        <h6 class="modal-title">Move to…</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" style="max-height:400px;overflow-y:auto">
+        <div id="moveBreadcrumbs" class="mb-2 small"></div>
+        <div id="moveFolderList"></div>
+      </div>
+      <div class="modal-footer border-secondary">
+        <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-primary btn-sm" onclick="doMove()">Move Here</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- New File modal -->
+<div class="modal fade" id="newFileModal" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content bg-dark border-secondary">
+      <div class="modal-header border-secondary">
+        <h6 class="modal-title">New Text File</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="text" id="newFileNameInput" class="form-control" placeholder="filename.txt">
+      </div>
+      <div class="modal-footer border-secondary">
+        <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-primary btn-sm" onclick="createTextFile()">Create</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Delete confirm modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content bg-dark border-secondary">
+      <div class="modal-header border-secondary">
+        <h6 class="modal-title">Delete</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="mb-0">Delete <strong id="deleteFileName"></strong>? This cannot be undone.</p>
+      </div>
+      <div class="modal-footer border-secondary">
+        <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-danger btn-sm" onclick="doDelete()">Delete</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Bulk Move modal -->
+<div class="modal fade" id="bulkMoveModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content bg-dark border-secondary">
+      <div class="modal-header border-secondary">
+        <h6 class="modal-title">Move selected to…</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" style="max-height:400px;overflow-y:auto">
+        <div id="bulkMoveBreadcrumbs" class="mb-2 small"></div>
+        <div id="bulkMoveFolderList"></div>
+      </div>
+      <div class="modal-footer border-secondary">
+        <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-primary btn-sm" onclick="doBulkMove()">Move Here</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Bulk action bar (fixed bottom) -->
+<div id="bulkActionBar" class="bulk-action-bar" style="display:none">
+  <div class="d-flex align-items-center justify-content-between w-100">
+    <div class="d-flex align-items-center gap-2">
+      <span id="bulkCount" class="fw-semibold">0 selected</span>
+      <button class="btn btn-sm btn-outline-light" onclick="selectAll()" title="Select all">
+        <i class="fas fa-check-double me-1"></i>All
+      </button>
+    </div>
+    <div class="d-flex gap-2">
+      <button class="btn btn-sm btn-outline-light" onclick="showBulkMoveModal()" title="Move selected">
+        <i class="fas fa-arrows-alt me-1"></i>Move
+      </button>
+      <button class="btn btn-sm btn-danger" onclick="bulkDelete()" title="Delete selected">
+        <i class="fas fa-trash me-1"></i>Delete
+      </button>
+      <button class="btn btn-sm btn-outline-secondary" onclick="exitSelectMode()" title="Cancel selection">
+        <i class="fas fa-times"></i>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Queue Panel modal -->
+<div class="modal fade" id="queueModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content bg-dark border-secondary">
+      <div class="modal-header border-secondary">
+        <h6 class="modal-title"><i class="fas fa-tasks me-2"></i>Re-encode Queue</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" style="max-height:500px;overflow-y:auto">
+        <div id="queueJobList" class="d-flex flex-column gap-2">
+          <p class="text-secondary small mb-0">Loading…</p>
+        </div>
+      </div>
+      <div class="modal-footer border-secondary">
+        <span id="queueSummary" class="text-secondary small me-auto"></span>
+        <button class="btn btn-sm btn-outline-secondary" id="clearFinishedBtn" onclick="clearFinishedJobs()">
+          <i class="fas fa-broom me-1"></i>Clear Finished
+        </button>
+        <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Toast container -->
+<div id="toastContainer"
+  style="position:fixed;bottom:20px;right:20px;z-index:9999;display:flex;flex-direction:column-reverse;gap:8px;"></div>
+
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+{% endblock %}

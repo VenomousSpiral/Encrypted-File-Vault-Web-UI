@@ -1,0 +1,814 @@
+{% extends "base.html" %}
+{% block title %}{{ file.name }} — Encrypted Vault{% endblock %}
+
+{% block head %}
+<style>
+    .nav-btn { min-width: 32px; }
+    .shuffle-btn.active { color: #fff; background-color: var(--bs-primary); border-color: var(--bs-primary); }
+    .nav-pos { font-size: .7rem; color: #8b949e; white-space: nowrap; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="player-page d-flex flex-column" style="height:calc(100vh - 56px)">
+    <!-- top bar -->
+    <div class="d-flex align-items-center gap-2 px-3 py-2 border-bottom border-secondary bg-dark flex-wrap">
+        <a href="{{ url_for('explorer') }}{% if file.parent_id is not none %}?parent_id={{ file.parent_id }}{% endif %}" class="btn btn-sm btn-outline-secondary">
+            <i class="fas fa-arrow-left"></i>
+        </a>
+        <span class="text-truncate fw-semibold flex-grow-1" style="min-width:0">{{ file.name }}</span>
+        <!-- File navigation -->
+        <div class="d-flex align-items-center gap-1">
+            <span class="nav-pos" id="navPos"></span>
+            <button class="btn btn-sm btn-outline-secondary nav-btn" id="prevBtn" title="Previous" disabled>
+                <i class="fas fa-chevron-left"></i>
+            </button>
+            <button class="btn btn-sm btn-outline-secondary nav-btn" id="nextBtn" title="Next" disabled>
+                <i class="fas fa-chevron-right"></i>
+            </button>
+            <button class="btn btn-sm btn-outline-secondary shuffle-btn" id="shuffleBtn" title="Shuffle">
+                <i class="fas fa-random"></i>
+            </button>
+        </div>
+        <a href="{{ url_for('download_file', file_id=file.id) }}" class="btn btn-sm btn-outline-primary">
+            <i class="fas fa-download me-1"></i><span class="d-none d-sm-inline">Download</span>
+        </a>
+    </div>
+
+    {% set mime = file.mime_type or '' %}
+
+    {% if mime.startswith('video/') %}
+    <!-- HLS Video Player (on-demand, Jellyfin-style) -->
+    <div id="hlsContainer" class="flex-grow-1 position-relative bg-black d-flex flex-column">
+        <!-- Loading overlay (hides once first frame arrives) -->
+        <div id="hlsLoading" class="position-absolute top-0 start-0 w-100 h-100 d-flex flex-column align-items-center justify-content-center" style="z-index:10;background:#000">
+            <div class="spinner-border text-primary mb-3" style="width:3rem;height:3rem" role="status">
+                <span class="visually-hidden">Loading…</span>
+            </div>
+            <h5 class="text-light" id="loadingTitle">Preparing…</h5>
+            <p class="text-secondary small mb-1" id="loadingDetail">Starting session</p>
+            <!-- Progress bar -->
+            <div style="width:280px;max-width:90%" class="mt-2">
+                <div class="progress" style="height:6px;background:#333">
+                    <div class="progress-bar bg-primary" id="loadingProgress" role="progressbar" style="width:0%;transition:width .3s"></div>
+                </div>
+                <p class="text-secondary small text-center mt-1 mb-0" id="loadingPct"></p>
+            </div>
+        </div>
+
+        <!-- Error overlay (hidden) -->
+        <div id="hlsError" class="d-none position-absolute top-0 start-0 w-100 h-100 d-flex flex-column align-items-center justify-content-center" style="z-index:11;background:#000">
+            <i class="fas fa-exclamation-triangle fa-3x text-danger mb-3"></i>
+            <h5 class="text-light">Playback Error</h5>
+            <p class="text-danger" id="hlsErrorMsg"></p>
+            <button class="btn btn-sm btn-outline-danger" onclick="location.reload()">
+                <i class="fas fa-redo me-1"></i>Retry
+            </button>
+        </div>
+
+        <video id="hlsVideo"
+               style="width:100%;flex:1;min-height:0;background:#000"></video>
+
+        <!-- Settings panel (anchored above controls bar) -->
+        <div id="settingsPanel" class="settings-panel d-none">
+            <div class="settings-header">
+                <span class="fw-semibold">Settings</span>
+                <button id="settingsClose" class="btn btn-sm btn-link text-light p-0">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div id="audioTrackGroup" class="settings-row d-none">
+                <label class="settings-label"><i class="fas fa-volume-up me-1"></i>Audio</label>
+                <select id="audioTrackSelect" class="settings-select"></select>
+            </div>
+            <div id="subtitleTrackGroup" class="settings-row d-none">
+                <label class="settings-label"><i class="fas fa-closed-captioning me-1"></i>Subtitles</label>
+                <select id="subtitleTrackSelect" class="settings-select"></select>
+            </div>
+            <div id="subOffsetGroup" class="settings-row d-none">
+                <label class="settings-label"><i class="fas fa-clock me-1"></i>Sub Offset</label>
+                <div class="d-flex align-items-center gap-2">
+                    <button class="offset-btn" id="subOffsetDown" title="-0.5s"><i class="fas fa-minus"></i></button>
+                    <span id="subOffsetValue" class="offset-value">0.0s</span>
+                    <button class="offset-btn" id="subOffsetUp" title="+0.5s"><i class="fas fa-plus"></i></button>
+                </div>
+            </div>
+            <div class="settings-row">
+                <label class="settings-label"><i class="fas fa-forward me-1"></i>Skip Time</label>
+                <div class="d-flex align-items-center gap-2">
+                    <button class="offset-btn" id="skipAmtDown" title="-5s"><i class="fas fa-minus"></i></button>
+                    <span id="skipAmtValue" class="offset-value">15s</span>
+                    <button class="offset-btn" id="skipAmtUp" title="+5s"><i class="fas fa-plus"></i></button>
+                </div>
+            </div>
+            <div id="audioCacheGroup" class="settings-row d-none">
+                <label class="settings-label"><i class="fas fa-database me-1"></i>Audio Cache</label>
+                <button id="clearCacheBtn" class="btn btn-sm btn-outline-warning">
+                    <i class="fas fa-trash me-1"></i>Clear
+                </button>
+            </div>
+        </div>
+
+        <!-- Custom controls bar -->
+        <div class="video-controls" id="videoControls">
+            <button class="ctrl-btn" id="skipBackBtn" title="Skip back">
+                <i class="fas fa-undo"></i>
+                <span class="skip-badge" id="skipBackLabel">15</span>
+            </button>
+            <button class="ctrl-btn" id="playPauseBtn" title="Play / Pause">
+                <i class="fas fa-play" id="playIcon"></i>
+            </button>
+            <button class="ctrl-btn" id="skipFwdBtn" title="Skip forward">
+                <i class="fas fa-redo"></i>
+                <span class="skip-badge" id="skipFwdLabel">15</span>
+            </button>
+            <span class="ctrl-time" id="timeDisplay">0:00 / 0:00</span>
+            <div class="ctrl-progress" id="progressBar">
+                <div class="ctrl-progress-buffer" id="bufferBar"></div>
+                <div class="ctrl-progress-fill" id="progressFill"></div>
+            </div>
+            <div class="ctrl-vol-wrap">
+                <button class="ctrl-btn" id="muteBtn" title="Mute">
+                    <i class="fas fa-volume-up" id="volIcon"></i>
+                </button>
+                <input type="range" class="ctrl-vol-slider" id="volSlider" min="0" max="1" step="0.05" value="1">
+            </div>
+            <button class="ctrl-btn" id="settingsBtn" title="Settings">
+                <i class="fas fa-cog"></i>
+            </button>
+            <button class="ctrl-btn" id="fullscreenBtn" title="Fullscreen">
+                <i class="fas fa-expand" id="fsIcon"></i>
+            </button>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='lib/hlsjs/hls.min.js') }}"></script>
+    <script>
+    (function() {
+        const FILE_ID   = {{ file.id }};
+        const masterUrl = '/api/hls/' + FILE_ID + '/master.m3u8';
+        const statusUrl = '/api/hls/' + FILE_ID + '/status';
+        const tracksUrl = '/api/hls/' + FILE_ID + '/tracks';
+        const vpUrl     = '/api/video/' + FILE_ID + '/prefs';
+
+        // ── Loading progress poller ─────────────────────────────────
+        const loadingTitle   = document.getElementById('loadingTitle');
+        const loadingDetail  = document.getElementById('loadingDetail');
+        const loadingProgress = document.getElementById('loadingProgress');
+        const loadingPct     = document.getElementById('loadingPct');
+
+        function fmtBytes(b) {
+            if (b >= 1073741824) return (b / 1073741824).toFixed(1) + ' GB';
+            if (b >= 1048576) return (b / 1048576).toFixed(0) + ' MB';
+            if (b >= 1024) return (b / 1024).toFixed(0) + ' KB';
+            return b + ' B';
+        }
+
+        let _progressTimer = null;
+        function pollProgress() {
+            _progressTimer = setInterval(() => {
+                fetch(statusUrl, {credentials: 'same-origin'})
+                    .then(r => r.json())
+                    .then(d => {
+                        if (d.status === 'error') {
+                            clearInterval(_progressTimer);
+                            loadingTitle.textContent = 'Error';
+                            loadingDetail.textContent = d.error_msg || 'Unknown error';
+                            loadingProgress.style.width = '0%';
+                            loadingPct.textContent = '';
+                            return;
+                        }
+                        if (d.status === 'ready') {
+                            clearInterval(_progressTimer);
+                            loadingTitle.textContent = 'Starting playback…';
+                            loadingDetail.textContent = 'Buffering first segments';
+                            loadingProgress.style.width = '100%';
+                            loadingPct.textContent = '';
+                            return;
+                        }
+                        // Initializing — show stage-specific progress
+                        const stage = d.stage || 'starting';
+                        if (stage === 'decrypting') {
+                            const pct = Math.round((d.decrypt_progress || 0) * 100);
+                            loadingTitle.textContent = 'Decrypting…';
+                            loadingDetail.textContent = fmtBytes(d.bytes_decrypted || 0) + ' / ' + fmtBytes(d.file_size || 0);
+                            loadingProgress.style.width = pct + '%';
+                            loadingPct.textContent = pct + '%';
+                        } else if (stage === 'probing') {
+                            loadingTitle.textContent = 'Analyzing…';
+                            loadingDetail.textContent = 'Scanning video streams';
+                            loadingProgress.classList.add('progress-bar-striped', 'progress-bar-animated');
+                            loadingProgress.style.width = '100%';
+                            loadingPct.textContent = '';
+                        } else if (stage === 'transcoding') {
+                            loadingTitle.textContent = 'Preparing stream…';
+                            loadingDetail.textContent = 'Starting FFmpeg';
+                            loadingProgress.classList.add('progress-bar-striped', 'progress-bar-animated');
+                            loadingProgress.style.width = '100%';
+                            loadingPct.textContent = '';
+                        } else {
+                            loadingTitle.textContent = 'Preparing…';
+                            loadingDetail.textContent = 'Starting session';
+                            loadingProgress.style.width = '0%';
+                            loadingPct.textContent = '';
+                        }
+                    })
+                    .catch(() => {});
+            }, 500);
+        }
+        pollProgress();
+
+        // ── Audio cache: check and wire clear button ────────────────
+        (function() {
+            const cacheGroup = document.getElementById('audioCacheGroup');
+            const clearBtn   = document.getElementById('clearCacheBtn');
+            const cacheUrl   = '/api/audio-cache/' + FILE_ID;
+            fetch(cacheUrl, {credentials: 'same-origin'})
+                .then(r => r.json())
+                .then(data => {
+                    if (data.has_cache) cacheGroup.classList.remove('d-none');
+                })
+                .catch(() => {});
+            clearBtn.addEventListener('click', () => {
+                clearBtn.disabled = true;
+                clearBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Clearing…';
+                fetch(cacheUrl + '/clear', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                })
+                .then(r => r.json())
+                .then(data => {
+                    clearBtn.innerHTML = '<i class="fas fa-check me-1"></i>Cleared';
+                    setTimeout(() => cacheGroup.classList.add('d-none'), 1500);
+                })
+                .catch(() => {
+                    clearBtn.innerHTML = '<i class="fas fa-times me-1"></i>Error';
+                    clearBtn.disabled = false;
+                });
+            });
+        })();
+
+        // Account-level defaults (rendered server-side)
+        const PREFS = {
+            audioLang:  '{{ prefs.default_audio_lang|default("", true) }}'.toLowerCase(),
+            subLang:    '{{ prefs.default_subtitle_lang|default("", true) }}'.toLowerCase(),
+            subOffset:  {{ prefs.default_subtitle_offset|default(0, true) }},
+            skipAmount: {{ prefs.skip_amount|default(15, true) }},
+        };
+
+        // Per-video state loaded from DB (rendered server-side)
+        // Only position and sub_offset are saved per-video; audio/sub track always uses defaults
+        const VP = {
+            position:   {{ vprefs.position|default(0, true) }},
+            sub_offset: {{ vprefs.sub_offset|default(0, true) }},
+        };
+
+        // Save per-video prefs to server
+        let _saveTimer = null;
+        function saveVideoPrefs(obj) {
+            Object.assign(VP, obj);
+            // Debounce rapid saves (100ms) but send full state
+            clearTimeout(_saveTimer);
+            _saveTimer = setTimeout(() => _flushVideoPrefs(), 100);
+        }
+        function _flushVideoPrefs() {
+            clearTimeout(_saveTimer);
+            fetch(vpUrl, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                credentials: 'same-origin',
+                body: JSON.stringify(VP),
+            }).then(r => {
+                if (!r.ok) console.error('Failed to save video prefs:', r.status);
+            }).catch(err => console.error('Video prefs save error:', err));
+        }
+
+        // Save user-level prefs to server (fire-and-forget)
+        function saveUserPrefs(obj) {
+            Object.assign(PREFS, obj);
+            fetch('/api/preferences', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                credentials: 'same-origin',
+                body: JSON.stringify(obj),
+            }).catch(() => {});
+        }
+
+        const loadingDiv    = document.getElementById('hlsLoading');
+        const errorDiv      = document.getElementById('hlsError');
+        const errorMsg      = document.getElementById('hlsErrorMsg');
+        const video         = document.getElementById('hlsVideo');
+        const settingsBtn   = document.getElementById('settingsBtn');
+        const settingsPanel = document.getElementById('settingsPanel');
+        const settingsClose = document.getElementById('settingsClose');
+        const audioGroup    = document.getElementById('audioTrackGroup');
+        const audioSelect   = document.getElementById('audioTrackSelect');
+        const subGroup      = document.getElementById('subtitleTrackGroup');
+        const subSelect     = document.getElementById('subtitleTrackSelect');
+        const subOffsetGroup  = document.getElementById('subOffsetGroup');
+        const subOffsetValue  = document.getElementById('subOffsetValue');
+
+        let hls = null;
+        let subtitleOffset = (VP.sub_offset !== 0) ? VP.sub_offset : PREFS.subOffset;
+        subOffsetValue.textContent = (subtitleOffset >= 0 ? '+' : '') + subtitleOffset.toFixed(1) + 's';
+
+        // ── Custom controls references ──────────────────────────────
+        const playPauseBtn  = document.getElementById('playPauseBtn');
+        const playIcon      = document.getElementById('playIcon');
+        const progressBar   = document.getElementById('progressBar');
+        const progressFill  = document.getElementById('progressFill');
+        const bufferBar     = document.getElementById('bufferBar');
+        const timeDisplay   = document.getElementById('timeDisplay');
+        const muteBtn       = document.getElementById('muteBtn');
+        const volIcon       = document.getElementById('volIcon');
+        const volSlider     = document.getElementById('volSlider');
+        const fullscreenBtn = document.getElementById('fullscreenBtn');
+        const fsIcon        = document.getElementById('fsIcon');
+        const hlsContainer  = document.getElementById('hlsContainer');
+
+        function fmtTime(s) {
+            if (!isFinite(s) || s < 0) s = 0;
+            const h = Math.floor(s / 3600);
+            const m = Math.floor((s % 3600) / 60);
+            const sec = Math.floor(s % 60);
+            return h > 0
+                ? h + ':' + String(m).padStart(2,'0') + ':' + String(sec).padStart(2,'0')
+                : m + ':' + String(sec).padStart(2,'0');
+        }
+
+        // Play / Pause
+        playPauseBtn.addEventListener('click', () => {
+            if (video.paused) video.play(); else video.pause();
+        });
+        video.addEventListener('click', () => {
+            if (video.paused) video.play(); else video.pause();
+        });
+        video.addEventListener('play',  () => { playIcon.className = 'fas fa-pause'; });
+        video.addEventListener('pause', () => { playIcon.className = 'fas fa-play'; });
+
+        // Progress bar
+        video.addEventListener('timeupdate', () => {
+            if (!video.duration) return;
+            const pct = (video.currentTime / video.duration) * 100;
+            progressFill.style.width = pct + '%';
+            timeDisplay.textContent = fmtTime(video.currentTime) + ' / ' + fmtTime(video.duration);
+        });
+        video.addEventListener('progress', () => {
+            if (video.buffered.length && video.duration) {
+                const end = video.buffered.end(video.buffered.length - 1);
+                bufferBar.style.width = (end / video.duration * 100) + '%';
+            }
+        });
+        let seeking = false;
+        function seekFromEvent(e) {
+            const rect = progressBar.getBoundingClientRect();
+            const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+            video.currentTime = pct * (video.duration || 0);
+        }
+        progressBar.addEventListener('mousedown', (e) => { seeking = true; seekFromEvent(e); });
+        document.addEventListener('mousemove', (e) => { if (seeking) seekFromEvent(e); });
+        document.addEventListener('mouseup', () => { seeking = false; });
+
+        // Volume
+        volSlider.addEventListener('input', () => {
+            video.volume = parseFloat(volSlider.value);
+            video.muted = false;
+            updateVolIcon();
+        });
+        muteBtn.addEventListener('click', () => {
+            video.muted = !video.muted;
+            updateVolIcon();
+        });
+        function updateVolIcon() {
+            if (video.muted || video.volume === 0) volIcon.className = 'fas fa-volume-mute';
+            else if (video.volume < 0.5) volIcon.className = 'fas fa-volume-down';
+            else volIcon.className = 'fas fa-volume-up';
+        }
+
+        // Fullscreen
+        fullscreenBtn.addEventListener('click', () => {
+            if (!document.fullscreenElement) hlsContainer.requestFullscreen();
+            else document.exitFullscreen();
+        });
+        document.addEventListener('fullscreenchange', () => {
+            fsIcon.className = document.fullscreenElement ? 'fas fa-compress' : 'fas fa-expand';
+        });
+
+        // ── Skip forward / back ─────────────────────────────────────
+        let skipAmount = PREFS.skipAmount;
+        const skipBackLabel = document.getElementById('skipBackLabel');
+        const skipFwdLabel  = document.getElementById('skipFwdLabel');
+        const skipAmtValue  = document.getElementById('skipAmtValue');
+        function refreshSkipLabels() {
+            const txt = skipAmount + 's';
+            skipBackLabel.textContent = skipAmount;
+            skipFwdLabel.textContent  = skipAmount;
+            skipAmtValue.textContent  = txt;
+        }
+        refreshSkipLabels();
+        document.getElementById('skipBackBtn').addEventListener('click', () => {
+            video.currentTime = Math.max(0, video.currentTime - skipAmount);
+        });
+        document.getElementById('skipFwdBtn').addEventListener('click', () => {
+            video.currentTime = Math.min(video.duration || Infinity, video.currentTime + skipAmount);
+        });
+        document.getElementById('skipAmtDown').addEventListener('click', () => {
+            skipAmount = Math.max(5, skipAmount - 5);
+            saveUserPrefs({ skip_amount: skipAmount });
+            refreshSkipLabels();
+        });
+        document.getElementById('skipAmtUp').addEventListener('click', () => {
+            skipAmount = Math.min(120, skipAmount + 5);
+            saveUserPrefs({ skip_amount: skipAmount });
+            refreshSkipLabels();
+        });
+
+        // ── Keyboard shortcuts ──────────────────────────────────────
+        document.addEventListener('keydown', (e) => {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+            switch(e.key) {
+                case ' ': case 'k':
+                    e.preventDefault();
+                    if (video.paused) video.play(); else video.pause();
+                    break;
+                case 'ArrowLeft':  e.preventDefault(); video.currentTime = Math.max(0, video.currentTime - skipAmount); break;
+                case 'ArrowRight': e.preventDefault(); video.currentTime = Math.min(video.duration||Infinity, video.currentTime + skipAmount); break;
+                case 'ArrowUp':    e.preventDefault(); video.volume = Math.min(1, video.volume + 0.1); volSlider.value = video.volume; updateVolIcon(); break;
+                case 'ArrowDown':  e.preventDefault(); video.volume = Math.max(0, video.volume - 0.1); volSlider.value = video.volume; updateVolIcon(); break;
+                case 'm': video.muted = !video.muted; updateVolIcon(); break;
+                case 'f': fullscreenBtn.click(); break;
+            }
+        });
+
+        // ── Resume position ─────────────────────────────────────────
+        const savedPos = VP.position || 0;
+
+        function savePosition() {
+            if (video.currentTime > 2 && video.duration && video.currentTime < video.duration - 5) {
+                VP.position = Math.floor(video.currentTime);
+                saveVideoPrefs({ position: VP.position });
+            }
+        }
+        // Save every 5 seconds
+        setInterval(savePosition, 5000);
+        // Save on page leave — use sendBeacon for reliability
+        window.addEventListener('beforeunload', () => {
+            if (video.currentTime > 2 && video.duration && video.currentTime < video.duration - 5) {
+                VP.position = Math.floor(video.currentTime);
+            }
+            navigator.sendBeacon(vpUrl, new Blob([JSON.stringify(VP)], {type: 'application/json'}));
+        });
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) { savePosition(); _flushVideoPrefs(); }
+        });
+        // Clear saved position when finished
+        video.addEventListener('ended', () => saveVideoPrefs({ position: 0 }));
+
+        // ── Hide loading once first frame renders ───────────────────
+        video.addEventListener('loadeddata', () => {
+            clearInterval(_progressTimer);
+            loadingDiv.classList.add('d-none');
+            // Restore saved position
+            if (savedPos > 2 && video.duration && savedPos < video.duration - 5) {
+                video.currentTime = savedPos;
+            }
+        });
+
+        // ── Settings panel toggle ───────────────────────────────────
+        settingsBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            settingsPanel.classList.toggle('d-none');
+        });
+        settingsClose.addEventListener('click', () => settingsPanel.classList.add('d-none'));
+        document.addEventListener('click', (e) => {
+            if (!settingsPanel.contains(e.target) && e.target !== settingsBtn && !settingsBtn.contains(e.target))
+                settingsPanel.classList.add('d-none');
+        });
+
+        // ── Subtitle offset ─────────────────────────────────────────
+        function updateSubOffset(delta) {
+            subtitleOffset = Math.round((subtitleOffset + delta) * 10) / 10;
+            subOffsetValue.textContent = (subtitleOffset >= 0 ? '+' : '') + subtitleOffset.toFixed(1) + 's';
+            saveVideoPrefs({ sub_offset: subtitleOffset });
+            applySubOffset();
+        }
+        document.getElementById('subOffsetDown').addEventListener('click', () => updateSubOffset(-0.5));
+        document.getElementById('subOffsetUp').addEventListener('click', () => updateSubOffset(0.5));
+
+        function applySubOffset() {
+            if (!hls) return;
+            const cur = hls.subtitleTrack;
+            if (cur < 0) return;
+            hls.subtitleTrack = -1;
+            setTimeout(() => {
+                hls.subtitleTrack = cur;
+                hls.subtitleDisplay = true;
+                setTimeout(() => shiftLoadedCues(), 500);
+            }, 50);
+        }
+        function shiftLoadedCues() {
+            for (let i = 0; i < video.textTracks.length; i++) {
+                const track = video.textTracks[i];
+                if ((track.kind === 'subtitles' || track.kind === 'captions') && track.cues) {
+                    for (let j = 0; j < track.cues.length; j++) {
+                        const cue = track.cues[j];
+                        if (cue._origStart === undefined) {
+                            cue._origStart = cue.startTime;
+                            cue._origEnd = cue.endTime;
+                        }
+                        cue.startTime = cue._origStart + subtitleOffset;
+                        cue.endTime   = cue._origEnd   + subtitleOffset;
+                    }
+                }
+            }
+        }
+
+        // ── Show error ──────────────────────────────────────────────
+        function showError(msg) {
+            loadingDiv.classList.add('d-none');
+            errorMsg.textContent = msg;
+            errorDiv.classList.remove('d-none');
+        }
+
+        // ── Start playback immediately ──────────────────────────────
+        if (!Hls.isSupported()) {
+            // Safari native HLS
+            video.src = masterUrl;
+            video.addEventListener('loadedmetadata', () => {
+                fetch(tracksUrl, {credentials:'same-origin'}).then(r => r.json()).then(setupNativeTracks);
+            });
+        } else {
+            hls = new Hls({
+                maxBufferLength: 30,
+                maxMaxBufferLength: 60,
+                renderTextTracksNatively: true,
+                xhrSetup: function(xhr) { xhr.withCredentials = true; },
+            });
+            hls.loadSource(masterUrl);
+            hls.attachMedia(video);
+
+            hls.on(Hls.Events.MANIFEST_PARSED, function() {
+                video.muted = true;
+                video.play().then(() => { video.muted = false; }).catch(() => {});
+                setupHlsTrackControls();
+            });
+            hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, setupHlsTrackControls);
+            hls.on(Hls.Events.SUBTITLE_TRACKS_UPDATED, setupHlsTrackControls);
+
+            hls.on(Hls.Events.ERROR, function(event, data) {
+                if (data.fatal) {
+                    console.error('HLS fatal error:', data.type, data.details);
+                    if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+                        hls.startLoad();
+                    } else {
+                        showError('Fatal playback error: ' + data.details);
+                        hls.destroy();
+                    }
+                }
+            });
+        }
+
+        // ── Track controls (hls.js) ────────────────────────────────
+        let audioInitialized = false;
+        let subInitialized   = false;
+
+        function setupHlsTrackControls() {
+            const audioTracks = hls.audioTracks;
+            if (audioTracks.length >= 1) {
+                audioGroup.classList.remove('d-none');
+                audioSelect.innerHTML = '';
+                let bestAudioIdx = 0;
+                audioTracks.forEach((t, i) => {
+                    const opt = document.createElement('option');
+                    opt.value = i;
+                    const lang = (t.lang || '').toLowerCase();
+                    opt.textContent = t.name || lang || ('Track ' + (i+1));
+                    opt.dataset.lang = lang;
+                    if (i === hls.audioTrack) opt.selected = true;
+                    audioSelect.appendChild(opt);
+                });
+                if (!audioInitialized) {
+                    audioInitialized = true;
+                    if (PREFS.audioLang) {
+                        const m = audioTracks.findIndex(t => {
+                            const l = (t.lang||'').toLowerCase();
+                            return l.startsWith(PREFS.audioLang) || PREFS.audioLang.startsWith(l);
+                        });
+                        if (m >= 0) bestAudioIdx = m;
+                    }
+                    if (bestAudioIdx !== hls.audioTrack) hls.audioTrack = bestAudioIdx;
+                    audioSelect.value = bestAudioIdx;
+                }
+                audioSelect.onchange = () => {
+                    const idx = parseInt(audioSelect.value);
+                    hls.audioTrack = idx;
+                };
+            }
+
+            const subTracks = hls.subtitleTracks;
+            if (subTracks.length > 0) {
+                subGroup.classList.remove('d-none');
+                subOffsetGroup.classList.remove('d-none');
+                subSelect.innerHTML = '<option value="-1">Off</option>';
+                let bestSubIdx = -1;
+                subTracks.forEach((t, i) => {
+                    const opt = document.createElement('option');
+                    opt.value = i;
+                    const lang = (t.lang || '').toLowerCase();
+                    opt.textContent = t.name || lang || ('Subtitle ' + (i+1));
+                    opt.dataset.lang = lang;
+                    subSelect.appendChild(opt);
+                });
+                if (!subInitialized) {
+                    subInitialized = true;
+                    if (PREFS.subLang) {
+                        const m = subTracks.findIndex(t => {
+                            const l = (t.lang||'').toLowerCase();
+                            return l.startsWith(PREFS.subLang) || PREFS.subLang.startsWith(l);
+                        });
+                        if (m >= 0) bestSubIdx = m;
+                    }
+                    if (bestSubIdx >= 0) { hls.subtitleTrack = bestSubIdx; hls.subtitleDisplay = true; }
+                    subSelect.value = bestSubIdx;
+                    if (subtitleOffset !== 0) setTimeout(() => applySubOffset(), 800);
+                }
+                subSelect.onchange = () => {
+                    const val = parseInt(subSelect.value);
+                    hls.subtitleTrack = val;
+                    hls.subtitleDisplay = (val >= 0);
+                    if (val >= 0 && subtitleOffset !== 0) setTimeout(() => applySubOffset(), 500);
+                };
+            }
+        }
+
+        // ── Track controls (Safari native) ──────────────────────────
+        function setupNativeTracks(data) {
+            if (data.audio && data.audio.length >= 1) {
+                audioGroup.classList.remove('d-none');
+                audioSelect.innerHTML = '';
+                data.audio.forEach(t => {
+                    const opt = document.createElement('option');
+                    opt.value = t.track_index;
+                    opt.textContent = t.label || t.language || ('Track ' + t.track_index);
+                    if (t.is_default) opt.selected = true;
+                    audioSelect.appendChild(opt);
+                });
+                if (PREFS.audioLang) {
+                    const m = data.audio.find(t => (t.language||'').toLowerCase().startsWith(PREFS.audioLang));
+                    if (m) audioSelect.value = m.track_index;
+                }
+                audioSelect.onchange = () => {};  // no per-video save
+            }
+            if (data.subtitles && data.subtitles.length > 0) {
+                subGroup.classList.remove('d-none');
+                subOffsetGroup.classList.remove('d-none');
+                subSelect.innerHTML = '<option value="-1">Off</option>';
+                data.subtitles.forEach(t => {
+                    const opt = document.createElement('option');
+                    opt.value = t.track_index;
+                    opt.textContent = t.label || t.language || ('Subtitle ' + t.track_index);
+                    subSelect.appendChild(opt);
+                });
+                if (PREFS.subLang) {
+                    const m = data.subtitles.find(t => (t.language||'').toLowerCase().startsWith(PREFS.subLang));
+                    if (m) subSelect.value = m.track_index;
+                }
+                subSelect.onchange = () => {};  // no per-video save
+            }
+        }
+    })();
+    </script>
+
+    {% elif mime.startswith('audio/') %}
+    <div class="flex-grow-1 d-flex flex-column align-items-center justify-content-center">
+        <i class="fas fa-music fa-5x text-primary mb-4 opacity-50"></i>
+        <h5 class="mb-4">{{ file.name }}</h5>
+        <audio controls autoplay style="width:min(100%,500px)">
+            <source src="{{ url_for('stream_file', file_id=file.id) }}" type="{{ mime }}">
+        </audio>
+    </div>
+
+    {% elif mime.startswith('image/') %}
+    <div class="flex-grow-1 d-flex align-items-center justify-content-center p-3 overflow-auto">
+        <img src="{{ url_for('stream_file', file_id=file.id) }}"
+             class="img-fluid" style="max-height:90vh" alt="{{ file.name }}">
+    </div>
+
+    {% elif mime == 'application/pdf' %}
+    <iframe src="{{ url_for('stream_file', file_id=file.id) }}"
+            class="flex-grow-1 border-0" style="min-height:80vh"></iframe>
+
+    {% elif mime.startswith('text/') %}
+    <div class="flex-grow-1 d-flex flex-column align-items-center justify-content-center">
+        <i class="fas fa-file-pen fa-5x text-primary mb-4 opacity-50"></i>
+        <h5>{{ file.name }}</h5>
+        <p class="text-secondary">This file can be edited in the text editor.</p>
+        <a href="{{ url_for('editor', file_id=file.id) }}" class="btn btn-primary mt-2">
+            <i class="fas fa-file-pen me-2"></i>Open in Editor
+        </a>
+    </div>
+
+    {% else %}
+    <div class="flex-grow-1 d-flex flex-column align-items-center justify-content-center">
+        <i class="fas fa-file fa-5x text-secondary mb-4 opacity-25"></i>
+        <h5>{{ file.name }}</h5>
+        <p class="text-secondary">No preview available for this file type.</p>
+        <a href="{{ url_for('download_file', file_id=file.id) }}" class="btn btn-primary mt-2">
+            <i class="fas fa-download me-2"></i>Download
+        </a>
+    </div>
+    {% endif %}
+</div>
+
+<!-- File navigation script (works for all file types) -->
+<script>
+(function() {
+    const FILE_ID = {{ file.id }};
+    const prevBtn    = document.getElementById('prevBtn');
+    const nextBtn    = document.getElementById('nextBtn');
+    const shuffleBtn = document.getElementById('shuffleBtn');
+    const navPos     = document.getElementById('navPos');
+
+    let shuffleOn = localStorage.getItem('vault_shuffle') === '1';
+    let siblingData = null;
+
+    // Determine shuffle root: the folder the user originally browsed from.
+    // Priority: URL ?from= param (set by explorer) > localStorage > file's own parent
+    const urlParams = new URLSearchParams(window.location.search);
+    let rootParentId = null;
+    if (urlParams.has('from')) {
+        // Fresh navigation from explorer — this is the authoritative root
+        rootParentId = urlParams.get('from') === 'root' ? 'null' : urlParams.get('from');
+        localStorage.setItem('vault_shuffle_root', rootParentId);
+    } else {
+        // Navigated here via prev/next/shuffle — use stored root
+        rootParentId = localStorage.getItem('vault_shuffle_root');
+    }
+
+    // Build a root query-string value for the API calls
+    function rootQS() {
+        if (rootParentId === null || rootParentId === undefined) return '';
+        return (rootParentId === 'null') ? '?root=null' : '?root=' + rootParentId;
+    }
+
+    // Restore shuffle state
+    if (shuffleOn) shuffleBtn.classList.add('active');
+
+    shuffleBtn.addEventListener('click', () => {
+        shuffleOn = !shuffleOn;
+        shuffleBtn.classList.toggle('active', shuffleOn);
+        localStorage.setItem('vault_shuffle', shuffleOn ? '1' : '0');
+    });
+
+    // Load sibling info (pass root so total includes the full tree)
+    fetch('/api/siblings/' + FILE_ID + rootQS(), { credentials: 'same-origin' })
+        .then(r => r.json())
+        .then(data => {
+            siblingData = data;
+            // If we still don't have a root, store the one the API computed
+            if (rootParentId === null && data.root_parent_id !== undefined) {
+                rootParentId = (data.root_parent_id === null) ? 'null' : String(data.root_parent_id);
+                localStorage.setItem('vault_shuffle_root', rootParentId);
+            }
+            if (data.total > 0) {
+                navPos.textContent = data.position + ' / ' + data.total;
+            }
+            if (data.prev_id) {
+                prevBtn.disabled = false;
+                prevBtn.addEventListener('click', () => navigateTo(data.prev_id));
+            }
+            if (data.next_id || data.total > 1) {
+                nextBtn.disabled = false;
+            }
+            nextBtn.addEventListener('click', goNext);
+        })
+        .catch(err => console.error('Siblings load error:', err));
+
+    function navigateTo(fileId) {
+        if (fileId) window.location.href = '/player/' + fileId;
+    }
+
+    function goNext() {
+        if (shuffleOn) {
+            fetch('/api/random-sibling/' + FILE_ID + rootQS(), { credentials: 'same-origin' })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.file_id) navigateTo(data.file_id);
+                })
+                .catch(err => console.error('Shuffle error:', err));
+        } else if (siblingData && siblingData.next_id) {
+            navigateTo(siblingData.next_id);
+        }
+    }
+
+    // Keyboard shortcuts: left/right arrows only when not in video player context
+    {% if not mime.startswith('video/') %}
+    document.addEventListener('keydown', (e) => {
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') return;
+        if (e.key === 'ArrowRight') { e.preventDefault(); goNext(); }
+        if (e.key === 'ArrowLeft' && siblingData && siblingData.prev_id) { e.preventDefault(); navigateTo(siblingData.prev_id); }
+    });
+    {% endif %}
+})();
+</script>
+{% endblock %}

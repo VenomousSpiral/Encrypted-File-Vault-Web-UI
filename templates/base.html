@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Encrypted Vault{% endblock %}</title>
+    <link href="{{ url_for('static', filename='lib/bootstrap/bootstrap.min.css') }}" rel="stylesheet">
+    <link href="{{ url_for('static', filename='lib/fontawesome/all.min.css') }}" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
+    {% block head %}{% endblock %}
+</head>
+<body>
+    {% if current_user.is_authenticated %}
+    <nav class="navbar navbar-dark bg-dark border-bottom border-secondary px-3">
+        <a class="navbar-brand d-flex align-items-center gap-2" href="{{ url_for('explorer') }}">
+            <i class="fas fa-shield-halved text-primary"></i>
+            <span class="fw-semibold">Encrypted Vault</span>
+        </a>
+        <button class="navbar-toggler d-sm-none border-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#navCollapse" aria-label="Toggle navigation" style="font-size:.75rem;padding:.25rem .5rem">
+            <i class="fas fa-bars"></i>
+        </button>
+        <div class="collapse navbar-collapse d-sm-flex justify-content-end" id="navCollapse">
+            <div class="d-flex align-items-center gap-2 flex-wrap mt-2 mt-sm-0 justify-content-end">
+                <span class="text-secondary small">
+                    <i class="fas fa-user me-1"></i>{{ current_user.username }}
+                </span>
+                <a href="{{ url_for('settings_page') }}" class="btn btn-outline-secondary btn-sm">
+                    <i class="fas fa-cog me-1"></i>Settings
+                </a>
+                {% if current_user.is_admin %}
+                <a href="{{ url_for('users_page') }}" class="btn btn-outline-secondary btn-sm">
+                    <i class="fas fa-users me-1"></i>Users
+                </a>
+                {% endif %}
+                <a href="{{ url_for('logout') }}" class="btn btn-outline-danger btn-sm">
+                    <i class="fas fa-right-from-bracket me-1"></i>Lock
+                </a>
+            </div>
+        </div>
+    </nav>
+    {% endif %}
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    <div class="px-3 pt-3">
+        {% for cat, msg in messages %}
+        <div class="alert alert-{{ 'danger' if cat == 'error' else cat }} alert-dismissible fade show mb-2" role="alert">
+            {{ msg }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+    {% endwith %}
+
+    {% block content %}{% endblock %}
+
+    <script src="{{ url_for('static', filename='lib/bootstrap/bootstrap.bundle.min.js') }}"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

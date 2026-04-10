@@ -1,0 +1,273 @@
+{% extends "base.html" %}
+{% block title %}Users — Encrypted Vault{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4" style="max-width:720px">
+    <div class="d-flex align-items-center justify-content-between mb-4">
+        <h4 class="mb-0"><i class="fas fa-users me-2 text-primary"></i>User Management</h4>
+        <button class="btn btn-primary btn-sm" onclick="showCreateUser()">
+            <i class="fas fa-user-plus me-1"></i>New User
+        </button>
+    </div>
+
+    <!-- User list -->
+    <div class="card bg-dark border-secondary">
+        <div class="table-responsive">
+            <table class="table table-dark table-hover mb-0">
+                <thead>
+                    <tr class="text-secondary small">
+                        <th>Username</th>
+                        <th class="text-center" style="width:80px">Admin</th>
+                        <th class="text-end" style="width:180px">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="userTableBody">
+                    {% for u in users %}
+                    <tr data-uid="{{ u.id }}">
+                        <td>
+                            <i class="fas fa-user-shield me-2 {% if u.is_admin %}text-warning{% else %}text-secondary{% endif %}"></i>
+                            {{ u.username }}
+                            {% if u.id == current_user.id %}<span class="badge bg-secondary ms-1">you</span>{% endif %}
+                        </td>
+                        <td class="text-center">
+                            {% if u.is_admin %}
+                            <span class="badge bg-warning text-dark">Admin</span>
+                            {% else %}
+                            <span class="badge bg-secondary">User</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-end">
+                            {% if u.id != current_user.id %}
+                            <button class="btn btn-outline-secondary btn-sm"
+                                    onclick="toggleAdmin({{ u.id }}, '{{ u.username }}')" title="Toggle admin">
+                                <i class="fas fa-shield-halved"></i>
+                            </button>
+                            <button class="btn btn-outline-primary btn-sm"
+                                    onclick="showResetPw({{ u.id }}, '{{ u.username }}')" title="Reset password">
+                                <i class="fas fa-key"></i>
+                            </button>
+                            <button class="btn btn-outline-danger btn-sm"
+                                    onclick="confirmDelete({{ u.id }}, '{{ u.username }}')" title="Delete user">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                            {% else %}
+                            <button class="btn btn-outline-primary btn-sm"
+                                    onclick="showChangePw()" title="Change password">
+                                <i class="fas fa-key me-1"></i>Change Password
+                            </button>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Create User modal -->
+<div class="modal fade" id="createUserModal" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content bg-dark border-secondary">
+      <div class="modal-header border-secondary">
+        <h6 class="modal-title">Create User</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+            <label class="form-label small text-secondary">Username</label>
+            <input type="text" id="newUsername" class="form-control" autocomplete="off">
+        </div>
+        <div class="mb-3">
+            <label class="form-label small text-secondary">Password</label>
+            <input type="password" id="newPassword" class="form-control" autocomplete="new-password">
+            <div class="form-text">Minimum 8 characters</div>
+        </div>
+        <div class="form-check">
+            <input type="checkbox" id="newIsAdmin" class="form-check-input">
+            <label class="form-check-label small" for="newIsAdmin">Administrator</label>
+        </div>
+      </div>
+      <div class="modal-footer border-secondary">
+        <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-primary btn-sm" onclick="doCreateUser()">Create</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Reset Password modal -->
+<div class="modal fade" id="resetPwModal" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content bg-dark border-secondary">
+      <div class="modal-header border-secondary">
+        <h6 class="modal-title">Reset Password</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="mb-2 text-secondary small">For user: <strong id="resetPwUser" class="text-light"></strong></p>
+        <input type="password" id="resetPwInput" class="form-control" placeholder="New password" autocomplete="new-password">
+        <div class="form-text">Minimum 8 characters</div>
+      </div>
+      <div class="modal-footer border-secondary">
+        <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-primary btn-sm" onclick="doResetPw()">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Change Own Password modal -->
+<div class="modal fade" id="changePwModal" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content bg-dark border-secondary">
+      <div class="modal-header border-secondary">
+        <h6 class="modal-title">Change Your Password</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+            <label class="form-label small text-secondary">Current Password</label>
+            <input type="password" id="currentPw" class="form-control">
+        </div>
+        <div class="mb-3">
+            <label class="form-label small text-secondary">New Password</label>
+            <input type="password" id="newPw" class="form-control">
+            <div class="form-text">Minimum 8 characters</div>
+        </div>
+      </div>
+      <div class="modal-footer border-secondary">
+        <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-primary btn-sm" onclick="doChangePw()">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Delete Confirm modal -->
+<div class="modal fade" id="delUserModal" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content bg-dark border-secondary">
+      <div class="modal-header border-secondary">
+        <h6 class="modal-title">Delete User</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="mb-0">Delete user <strong id="delUserName"></strong>? This cannot be undone.</p>
+      </div>
+      <div class="modal-footer border-secondary">
+        <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-danger btn-sm" onclick="doDeleteUser()">Delete</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const modal = id => bootstrap.Modal.getOrCreateInstance(document.getElementById(id));
+let _uid = null;
+
+// ── Create User ─────────────────────
+function showCreateUser() {
+    document.getElementById('newUsername').value = '';
+    document.getElementById('newPassword').value = '';
+    document.getElementById('newIsAdmin').checked = false;
+    modal('createUserModal').show();
+    setTimeout(() => document.getElementById('newUsername').focus(), 200);
+}
+
+async function doCreateUser() {
+    const username = document.getElementById('newUsername').value.trim();
+    const password = document.getElementById('newPassword').value;
+    const is_admin = document.getElementById('newIsAdmin').checked;
+    try {
+        const r = await fetch('/api/users/create', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({username, password, is_admin}),
+        });
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.error);
+        modal('createUserModal').hide();
+        location.reload();
+    } catch (e) { alert(e.message); }
+}
+
+// ── Toggle Admin ────────────────────
+async function toggleAdmin(uid, name) {
+    if (!confirm(`Toggle admin status for ${name}?`)) return;
+    try {
+        const r = await fetch(`/api/users/${uid}/toggle-admin`, {method: 'POST'});
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.error);
+        location.reload();
+    } catch (e) { alert(e.message); }
+}
+
+// ── Reset Password ──────────────────
+function showResetPw(uid, name) {
+    _uid = uid;
+    document.getElementById('resetPwUser').textContent = name;
+    document.getElementById('resetPwInput').value = '';
+    modal('resetPwModal').show();
+    setTimeout(() => document.getElementById('resetPwInput').focus(), 200);
+}
+
+async function doResetPw() {
+    const password = document.getElementById('resetPwInput').value;
+    try {
+        const r = await fetch(`/api/users/${_uid}/reset-password`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({password}),
+        });
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.error);
+        modal('resetPwModal').hide();
+        alert('Password reset successfully.');
+    } catch (e) { alert(e.message); }
+}
+
+// ── Change Own Password ─────────────
+function showChangePw() {
+    document.getElementById('currentPw').value = '';
+    document.getElementById('newPw').value = '';
+    modal('changePwModal').show();
+    setTimeout(() => document.getElementById('currentPw').focus(), 200);
+}
+
+async function doChangePw() {
+    const current_password = document.getElementById('currentPw').value;
+    const new_password = document.getElementById('newPw').value;
+    try {
+        const r = await fetch('/api/change-password', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({current_password, new_password}),
+        });
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.error);
+        modal('changePwModal').hide();
+        alert('Password changed. You will be logged out.');
+        window.location.href = '/logout';
+    } catch (e) { alert(e.message); }
+}
+
+// ── Delete User ─────────────────────
+function confirmDelete(uid, name) {
+    _uid = uid;
+    document.getElementById('delUserName').textContent = name;
+    modal('delUserModal').show();
+}
+
+async function doDeleteUser() {
+    try {
+        const r = await fetch(`/api/users/${_uid}/delete`, {method: 'POST'});
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.error);
+        modal('delUserModal').hide();
+        location.reload();
+    } catch (e) { alert(e.message); }
+}
+</script>
+{% endblock %}
