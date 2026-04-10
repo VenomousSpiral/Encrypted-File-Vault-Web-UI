@@ -58,7 +58,7 @@ The application will be available at `http://localhost:5000`
 
 ### Copy and Past
 ```bash
-git clone <repository-url>
+git clone https://github.com/VenomousSpiral/Encrypted-File-Vault-Web-UI.git
 cd File-Encrypter
 source venv/bin/activate
 # source venv\Scripts\activate // on Windows
@@ -69,6 +69,8 @@ python run.py
 ### Docker Setup (Recommended)
 
 ```bash
+git clone https://github.com/VenomousSpiral/Encrypted-File-Vault-Web-UI.git
+cd File-Encrypter
 docker-compose up -d
 ```
 
