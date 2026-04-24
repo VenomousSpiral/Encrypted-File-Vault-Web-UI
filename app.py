@@ -44,6 +44,7 @@ from models import (
     get_all_video_last_accessed,
     migrate_user_fields,
     get_audio_cache_info, clear_audio_cache, has_audio_cache,
+    get_cbz_preferences, set_cbz_preferences, clear_cbz_preferences,
 )
 from transcoder import get_session, destroy_session
 
@@ -1046,6 +1047,137 @@ def api_set_video_prefs(file_id):
 def api_clear_video_prefs():
     count = clear_all_video_preferences(current_user.id)
     return jsonify({'success': True, 'cleared': count})
+
+
+# ── CBZ reader ───────────────────────────────────────────────────────
+
+@app.route('/cbz/<int:file_id>')
+@login_required
+def cbz_reader(file_id):
+    """CBZ reader page."""
+    mk = _get_master_key()
+    f = get_file(file_id, current_user.id, key=mk)
+    if not f or f['is_directory']:
+        abort(404)
+    # Touch last_accessed (video_preferences tracks last_accessed used by "recent" sort)
+    set_video_preferences(current_user.id, file_id, key=mk)
+    cbz_prefs = get_cbz_preferences(current_user.id, file_id, key=mk)
+    return render_template('cbz.html', file=dict(f), cbz_prefs=cbz_prefs)
+
+
+@app.route('/api/cbz/<int:file_id>/image')
+@login_required
+def api_cbz_image(file_id):
+    """Extract and serve a single page image from a CBZ file.
+    The image is decrypted on-the-fly from the vault."""
+    enc = _get_encryptor()
+    if enc is None:
+        return jsonify({'error': 'Vault is locked'}), 403
+
+    f = get_file(file_id, current_user.id, key=_get_master_key())
+    if not f or f['is_directory']:
+        return jsonify({'error': 'Not found'}), 404
+
+    vault_path = os.path.join(config.VAULT_DIR, f['vault_filename'])
+    if not os.path.exists(vault_path):
+        return jsonify({'error': 'File missing from vault'}), 404
+
+    page = request.args.get('page', 0, type=int)
+    if page < 0:
+        return jsonify({'error': 'Invalid page'}), 400
+
+    import zipfile
+    import io
+
+    # Decrypt entire CBZ into RAM, then extract the requested page
+    decrypted = io.BytesIO()
+    for chunk in enc.decrypt_full(vault_path):
+        decrypted.write(chunk)
+    decrypted.seek(0)
+
+    with zipfile.ZipFile(decrypted, 'r') as zf:
+        all_files = zf.namelist()
+        image_exts = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.tiff'}
+        image_files = sorted(
+            [n for n in all_files if os.path.splitext(n)[1].lower() in image_exts],
+            key=lambda n: n.lower()
+        )
+
+        if page >= len(image_files):
+            return jsonify({'error': 'Page not found'}), 404
+
+        image_data = zf.read(image_files[page])
+        ext = os.path.splitext(image_files[page])[1].lower()
+        mime_map = {
+            '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+            '.png': 'image/png', '.gif': 'image/gif',
+            '.webp': 'image/webp', '.bmp': 'image/bmp',
+            '.tiff': 'image/tiff', '.tif': 'image/tiff',
+        }
+        mime = mime_map.get(ext, 'image/jpeg')
+
+    return Response(image_data, mimetype=mime)
+
+
+@app.route('/api/cbz/<int:file_id>/pages')
+@login_required
+def api_cbz_pages(file_id):
+    """Return total number of pages in a CBZ file."""
+    enc = _get_encryptor()
+    if enc is None:
+        return jsonify({'error': 'Vault is locked'}), 403
+
+    f = get_file(file_id, current_user.id, key=_get_master_key())
+    if not f or f['is_directory']:
+        return jsonify({'error': 'Not found'}), 404
+
+    vault_path = os.path.join(config.VAULT_DIR, f['vault_filename'])
+    if not os.path.exists(vault_path):
+        return jsonify({'error': 'File missing from vault'}), 404
+
+    import zipfile
+    import io
+
+    # Decrypt entire CBZ into RAM
+    decrypted = io.BytesIO()
+    for chunk in enc.decrypt_full(vault_path):
+        decrypted.write(chunk)
+    decrypted.seek(0)
+
+    with zipfile.ZipFile(decrypted, 'r') as zf:
+        image_exts = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.tiff'}
+        image_files = sorted(
+            [n for n in zf.namelist() if os.path.splitext(n)[1].lower() in image_exts],
+            key=lambda n: n.lower()
+        )
+
+    return jsonify({'pages': len(image_files)})
+
+
+@app.route('/api/cbz/<int:file_id>/prefs', methods=['GET'])
+@login_required
+def api_get_cbz_prefs(file_id):
+    f = get_file(file_id, current_user.id, key=_get_master_key())
+    if not f:
+        abort(404)
+    mk = _get_master_key()
+    return jsonify(get_cbz_preferences(current_user.id, file_id, key=mk))
+
+
+@app.route('/api/cbz/<int:file_id>/prefs', methods=['POST'])
+@login_required
+def api_set_cbz_prefs(file_id):
+    mk = _get_master_key()
+    f = get_file(file_id, current_user.id, key=mk)
+    if not f:
+        abort(404)
+    data = request.get_json(silent=True) or {}
+    allowed = {}
+    if 'page' in data:
+        allowed['page'] = int(data['page'])
+    if allowed:
+        set_cbz_preferences(current_user.id, file_id, key=mk, **allowed)
+    return jsonify({'success': True})
 
 
 # ── audio cache management ───────────────────────────────────────────

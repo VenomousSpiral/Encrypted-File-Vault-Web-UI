@@ -242,7 +242,14 @@ function openFile(f) {
         window.location.href = `/editor/${f.id}${fromParam}`;
         return;
     }
+    // CBZ files → CBZ reader
     const mime = f.mime_type || '';
+    const name = (f.name || '').toLowerCase();
+    if (mime === 'application/vnd.comicbook+zip' || name.endsWith('.cbz')) {
+        const fromParam = currentParentId !== null ? `?from=${currentParentId}` : '?from=root';
+        window.location.href = `/cbz/${f.id}${fromParam}`;
+        return;
+    }
     if (mime.startsWith('video/') || mime.startsWith('audio/') ||
         mime.startsWith('image/') || mime === 'application/pdf') {
         const fromParam = currentParentId !== null ? `?from=${currentParentId}` : '?from=root';

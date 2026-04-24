@@ -176,6 +176,16 @@ def init_db():
             UNIQUE(file_id, track_index),
             FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE CASCADE
         );
+
+        -- Per-user per-CBZ page position (encrypted per-user)
+        CREATE TABLE IF NOT EXISTS cbz_preferences (
+            user_id   INTEGER NOT NULL,
+            file_id   INTEGER NOT NULL,
+            data_blob BLOB    DEFAULT x'',
+            PRIMARY KEY (user_id, file_id),
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE CASCADE
+        );
     ''')
 
     # ── migrations for pre-existing databases ────────────────────────
@@ -919,3 +929,82 @@ def has_audio_cache(file_id: int) -> bool:
     ).fetchone()
     db.close()
     return row is not None
+
+
+# ── CBZ preferences ──────────────────────────────────────────────────
+
+_CBZ_PREF_DEFAULTS = {
+    'page': 0,
+    'last_accessed': '',
+}
+
+
+def get_cbz_preferences(user_id: int, file_id: int,
+                        *, key: bytes | None = None) -> dict:
+    """Return saved CBZ page position, or defaults."""
+    db = get_db()
+    row = db.execute(
+        'SELECT * FROM cbz_preferences WHERE user_id = ? AND file_id = ?',
+        (user_id, file_id)).fetchone()
+    db.close()
+    if not row:
+        return dict(_CBZ_PREF_DEFAULTS)
+
+    d = dict(row)
+    blob = d.get('data_blob')
+    if key and _is_encrypted_blob(blob):
+        cbz_data = _decrypt_value(key, blob)
+        result = dict(_CBZ_PREF_DEFAULTS)
+        result.update(cbz_data)
+        return result
+
+    return dict(_CBZ_PREF_DEFAULTS)
+
+
+def set_cbz_preferences(user_id: int, file_id: int,
+                        *, key: bytes | None = None, **kwargs):
+    """Upsert CBZ preferences (page position, etc.).
+    All values are stored encrypted in a single data_blob column."""
+    from datetime import datetime, timezone
+
+    allowed_keys = {'page'}
+    filtered = {k: v for k, v in kwargs.items() if k in allowed_keys}
+
+    db = get_db()
+    existing = db.execute(
+        'SELECT data_blob FROM cbz_preferences WHERE user_id = ? AND file_id = ?',
+        (user_id, file_id)).fetchone()
+
+    if existing and key and _is_encrypted_blob(existing['data_blob']):
+        current = _decrypt_value(key, existing['data_blob'])
+    else:
+        current = dict(_CBZ_PREF_DEFAULTS)
+
+    current.update(filtered)
+    current['last_accessed'] = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+
+    if key:
+        enc_blob = _encrypt_value(key, current)
+    else:
+        enc_blob = json.dumps(current).encode('utf-8')
+
+    if existing:
+        db.execute('UPDATE cbz_preferences SET data_blob = ? WHERE user_id = ? AND file_id = ?',
+                   (enc_blob, user_id, file_id))
+    else:
+        db.execute('INSERT INTO cbz_preferences (user_id, file_id, data_blob) VALUES (?, ?, ?)',
+                   (user_id, file_id, enc_blob))
+
+    db.commit()
+    db.close()
+
+
+def clear_cbz_preferences(user_id: int) -> int:
+    """Delete all CBZ preferences for a user. Returns count deleted."""
+    db = get_db()
+    cur = db.execute('DELETE FROM cbz_preferences WHERE user_id = ?',
+                     (user_id,))
+    count = cur.rowcount
+    db.commit()
+    db.close()
+    return count
