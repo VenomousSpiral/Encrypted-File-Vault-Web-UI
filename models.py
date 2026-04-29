@@ -508,11 +508,26 @@ def search_files(owner_id: int, query: str, *, parent_id=None, key: bytes | None
 
     q = query.lower()
     results = []
+
+    # Collect all descendant folder IDs (including parent_id itself)
+    descendant_ids = set()
+    if parent_id != 'all' and parent_id is not None:
+        descendant_ids.add(parent_id)
+        # BFS: find all folders whose parent is in descendant_ids
+        queue = [parent_id]
+        while queue:
+            current = queue.pop(0)
+            for f in all_files:
+                if f.get('is_directory') and f.get('parent_id') == current:
+                    if f['id'] not in descendant_ids:
+                        descendant_ids.add(f['id'])
+                        queue.append(f['id'])
+
     for f in all_files:
         name = (f.get('name') or '')
         if q in name.lower():
-            # Filter to the requested directory
-            if parent_id != 'all' and f.get('parent_id') != parent_id:
+            # Filter to the requested directory and all subdirectories
+            if parent_id != 'all' and parent_id is not None and f.get('parent_id') not in descendant_ids:
                 continue
             # Build path
             parts = []
