@@ -1134,7 +1134,7 @@ function setupSearch() {
 async function doSearch(query) {
     show('loadingState'); hide('emptyState'); hide('fileList');
     try {
-        const data = await apiGet(`/api/search?q=${encodeURIComponent(query)}&parent_id=all`);
+        const data = await apiGet(`/api/search?q=${encodeURIComponent(query)}&parent_id=${encodeURIComponent(currentParentId)}`);
         searchActive = true;
         currentFiles = data.files;
 
