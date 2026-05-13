@@ -43,6 +43,8 @@ _BITMAP_SUB_CODECS = {'hdmv_pgs_subtitle', 'dvd_subtitle',
 def _ffprobe(path: str) -> dict:
     cmd = [
         config.FFPROBE_PATH, '-v', 'quiet',
+        '-analyzeduration', '100000000',   # 100 s — large MKV files may have many streams
+        '-probesize', '500000000',         # 500 MB — probe deep enough to identify all streams
         '-print_format', 'json',
         '-show_format', '-show_streams', path,
     ]
@@ -370,10 +372,10 @@ class HLSSession:
 
         cmd = [
             config.FFMPEG_PATH, '-y', '-hide_banner', '-loglevel', 'warning',
-            # Explicit probing limits — prevents FFmpeg from hanging on
-            # MKV files with font attachment streams (the Docker bug).
-            '-analyzeduration', '10000000',   # 10 seconds
-            '-probesize', '50000000',         # 50 MB
+            # Increased probe values + ignore attachment streams (fonts/images).
+            '-analyzeduration', '100000000',   # 100 seconds
+            '-probesize', '500000000',         # 500 MB
+            '-ignore_unknown',                 # skip streams with unknown codec
             '-i', self.source_path,
             *stream_args, *codec_args,
             '-f', 'hls',
@@ -615,14 +617,18 @@ class HLSSession:
             config.VAULT_DIR, f'_ow_{uuid.uuid4()}.tmp')
         cmd = [
             config.FFMPEG_PATH, '-y', '-hide_banner', '-loglevel', 'warning',
-            '-analyzeduration', '10000000', '-probesize', '50000000',
+            # Increased probe values + ignore attachment streams (fonts/images)
+            '-analyzeduration', '100000000',   # 100 seconds
+            '-probesize', '500000000',         # 500 MB
+            '-ignore_unknown',                 # skip streams with unknown codec
             '-i', self.source_path,
-            '-map', '0',
+            '-map', '0:v:0',                   # only first video (not cover pic)
+            '-map', '0:a',
+            '-map', '0:s',
             '-c:v', 'libx265', '-crf', '18', '-preset', 'slow',
             '-pix_fmt', 'yuv420p',
             '-c:a', 'aac', '-b:a', '192k', '-ac', '2',
             '-c:s', 'copy',
-            '-c:d', 'copy',
             '-f', 'matroska', output_path,
         ]
 
@@ -674,8 +680,9 @@ class HLSSession:
         cmd = [
             config.FFMPEG_PATH, '-y', '-hide_banner',
             '-loglevel', 'error',
-            '-analyzeduration', '10000000',
-            '-probesize', '50000000',
+            '-analyzeduration', '100000000',   # 100 seconds
+            '-probesize', '500000000',         # 500 MB
+            '-ignore_unknown',                 # skip unknown codec streams
             '-i', self.source_path,
             '-map', f'0:s:{tidx}',
             '-c:s', 'webvtt',
@@ -1067,9 +1074,14 @@ def _process_reencode_job(item: dict):
             config.VAULT_DIR, f'_ow_{uuid.uuid4()}.tmp')
         cmd = [
             config.FFMPEG_PATH, '-y', '-hide_banner', '-loglevel', 'warning',
-            '-analyzeduration', '10000000', '-probesize', '50000000',
+            # Increased probe values + ignore attachment streams (fonts/images)
+            '-analyzeduration', '100000000',   # 100 seconds
+            '-probesize', '500000000',         # 500 MB
+            '-ignore_unknown',                 # skip streams with unknown codec
             '-i', source_path,
-            '-map', '0', '-dn',  # exclude data/attachment streams
+            '-map', '0:v:0',                   # only first video (not cover pic)
+            '-map', '0:a',
+            '-map', '0:s',
             '-c:v', 'libx265', '-crf', '18', '-preset', 'slow',
             '-pix_fmt', 'yuv420p',
             '-c:a', 'aac', '-b:a', '192k', '-ac', '2',
