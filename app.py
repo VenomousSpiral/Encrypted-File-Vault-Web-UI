@@ -1245,7 +1245,7 @@ def api_clear_all_audio_cache():
 @app.route('/api/overwrite-audio/<int:file_id>', methods=['POST'])
 @login_required
 def api_overwrite_audio(file_id):
-    """Re-encode a video to H.264 8-bit + AAC stereo for browser playback."""
+    """Re-encode a video to H.265 (HEVC) + AAC stereo for better compression."""
     enc = _get_encryptor()
     if enc is None:
         return jsonify({'success': False, 'error': 'Vault locked'}), 403
@@ -1281,7 +1281,7 @@ def api_overwrite_audio(file_id):
                         'error': result['reason']}), 409
 
     return jsonify({'success': True,
-                    'message': 'Re-encode queued (H.264 + AAC). '
+                    'message': 'Re-encode queued (H.265 + AAC). '
                                'You will be notified when it finishes.'})
 
 

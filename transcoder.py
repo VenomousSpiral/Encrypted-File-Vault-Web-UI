@@ -352,7 +352,7 @@ class HLSSession:
             vc = self.video_streams[0].get('codec_name', '')
             codec_args = (
                 ['-c:v', 'copy'] if vc in _VIDEO_COPY_CODECS
-                else ['-c:v', 'libx264', '-preset', 'fast', '-crf', '22']
+                else ['-c:v', 'libx265', '-preset', 'fast', '-crf', '22']
             )
             stream_args = ['-map', '0:v:0', '-an', '-sn']
         else:
@@ -587,9 +587,9 @@ class HLSSession:
 
     # ── overwrite mode (re-encode for browser compat) ────────────────
     def _do_overwrite(self):
-        """Re-encode source → H.264 8-bit video + AAC stereo audio.
+        """Re-encode source → H.265 8-bit video + AAC stereo audio.
 
-        Produces a file playable in virtually every browser.
+        Produces a file with better compression while maintaining quality.
         """
         if self._source_deleted or not os.path.exists(self.source_path):
             logger.warning('[HLS %d] Cannot overwrite: source gone',
@@ -601,9 +601,9 @@ class HLSSession:
         pix_fmt = self.video_streams[0].get('pix_fmt', '') if self.video_streams else ''
         non_aac = [i for i, s in enumerate(self.audio_streams)
                    if s.get('codec_name', '') not in _AUDIO_COPY_CODECS]
-        needs_video = vc != 'h264' or pix_fmt != 'yuv420p'
+        needs_video = vc != 'hevc' or pix_fmt != 'yuv420p'
         if not needs_video and not non_aac:
-            logger.info('[HLS %d] Already H.264/yuv420p + all AAC, skipping overwrite',
+            logger.info('[HLS %d] Already H.265/yuv420p + all AAC, skipping overwrite',
                         self.file_id)
             return
 
@@ -618,7 +618,7 @@ class HLSSession:
             '-analyzeduration', '10000000', '-probesize', '50000000',
             '-i', self.source_path,
             '-map', '0',
-            '-c:v', 'libx264', '-crf', '18', '-preset', 'slow',
+            '-c:v', 'libx265', '-crf', '18', '-preset', 'slow',
             '-pix_fmt', 'yuv420p',
             '-c:a', 'aac', '-b:a', '192k', '-ac', '2',
             '-c:s', 'copy',
@@ -1054,10 +1054,10 @@ def _process_reencode_job(item: dict):
         pix_fmt = video_streams[0].get('pix_fmt', '') if video_streams else ''
         non_aac = [i for i, s in enumerate(audio_streams)
                    if s.get('codec_name', '') not in _AUDIO_COPY_CODECS]
-        needs_video = vc != 'h264' or pix_fmt != 'yuv420p'
+        needs_video = vc != 'hevc' or pix_fmt != 'yuv420p'
 
         if not needs_video and not non_aac:
-            logger.info('[RE %d] Already H.264/yuv420p + all AAC — skipping',
+            logger.info('[RE %d] Already H.265/yuv420p + all AAC — skipping',
                         file_id)
             _finish_job(job_id, status='skipped')
             return
@@ -1069,12 +1069,11 @@ def _process_reencode_job(item: dict):
             config.FFMPEG_PATH, '-y', '-hide_banner', '-loglevel', 'warning',
             '-analyzeduration', '10000000', '-probesize', '50000000',
             '-i', source_path,
-            '-map', '0',
-            '-c:v', 'libx264', '-crf', '18', '-preset', 'slow',
+            '-map', '0', '-dn',  # exclude data/attachment streams
+            '-c:v', 'libx265', '-crf', '18', '-preset', 'slow',
             '-pix_fmt', 'yuv420p',
             '-c:a', 'aac', '-b:a', '192k', '-ac', '2',
             '-c:s', 'copy',
-            '-c:d', 'copy',
             '-f', 'matroska', output_path,
         ]
 
