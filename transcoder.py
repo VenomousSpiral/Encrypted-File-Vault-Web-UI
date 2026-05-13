@@ -354,14 +354,14 @@ class HLSSession:
                 ['-c:v', 'copy'] if vc in _VIDEO_COPY_CODECS
                 else ['-c:v', 'libx265', '-preset', 'fast', '-crf', '22']
             )
-            stream_args = ['-map', '0:v:0', '-an', '-sn']
+            stream_args = ['-map', '0:v:0', '-an', '-sn', '-dn']
         else:
             ac = self.audio_streams[tidx].get('codec_name', '')
             codec_args = (
                 ['-c:a', 'copy'] if ac in _AUDIO_COPY_CODECS
                 else ['-c:a', 'aac', '-b:a', '192k']
             )
-            stream_args = [f'-map', f'0:a:{tidx}', '-vn', '-sn']
+            stream_args = [f'-map', f'0:a:{tidx}', '-vn', '-sn', '-dn']
 
         # Write stderr to a file — prevents pipe deadlock AND lets us
         # see the actual error when FFmpeg fails in Docker.
