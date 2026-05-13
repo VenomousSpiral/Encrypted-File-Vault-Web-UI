@@ -1068,7 +1068,7 @@ def _process_reencode_job(item: dict):
         cmd = [
             config.FFMPEG_PATH, '-y', '-hide_banner', '-loglevel', 'warning',
             '-analyzeduration', '10000000', '-probesize', '50000000',
-            '-i', source_path,
+            '-ignore_unknown', '-i', source_path,
             '-map', '0:v', '-map', '0:a', '-map', '0:s?',  # only V/A/S, skip data
             '-c:v', 'libx265', '-crf', '18', '-preset', 'slow',
             '-pix_fmt', 'yuv420p',
