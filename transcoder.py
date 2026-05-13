@@ -155,44 +155,6 @@ class HLSSession:
                          args=(encryptor, vault_filename, preferred_audio_lang),
                          daemon=True).start()
 
-    def _strip_attachments(self, filepath: str):
-        """Re-mux file to remove all attachments/data streams.
-        
-        Uses FFmpeg to copy only video, audio, and text-based subtitles.
-        Writes to a temporary file, then replaces the original.
-        """
-        temp_cleaned = filepath + '.clean'
-        try:
-            cmd = [
-                config.FFMPEG_PATH, '-y', '-hide_banner', '-loglevel', 'warning',
-                '-i', filepath,
-                '-map', '0:v',        # all video streams
-                '-map', '0:a',        # all audio streams
-                '-map', '0:s?',       # all subtitle streams (? = optional)
-                '-c', 'copy',         # copy without re-encoding
-                '-f', 'matroska',     # output format
-                temp_cleaned,
-            ]
-            logger.info('[HLS %d] Stripping attachments via FFmpeg: %s',
-                        self.file_id, ' '.join(cmd))
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
-            if r.returncode != 0:
-                raise RuntimeError(f'FFmpeg strip failed (rc={r.returncode}): {r.stderr[:500]}')
-            
-            # Replace original with cleaned file
-            cleaned_size = os.path.getsize(temp_cleaned)
-            os.replace(temp_cleaned, filepath)
-            logger.info('[HLS %d] Attachments stripped, temp file: %.1f MB',
-                        self.file_id, cleaned_size / (1024*1024))
-        except Exception as e:
-            # Clean up temp file if it exists
-            if os.path.exists(temp_cleaned):
-                try:
-                    os.remove(temp_cleaned)
-                except Exception:
-                    pass
-            raise
-
     def _pick_default_audio(self, preferred_lang: str) -> int:
         """Return the index of the best audio track for the given language."""
         if not preferred_lang:
@@ -246,15 +208,6 @@ class HLSSession:
                     self.bytes_decrypted += len(chunk)
                     if self.file_size > 0:
                         self.decrypt_progress = self.bytes_decrypted / self.file_size
-
-            # 1b. Strip attachments (re-mux without attachments)
-            self.init_stage = 'cleaning'
-            logger.info('[HLS %d] Stripping attachments…', self.file_id)
-            try:
-                self._strip_attachments(self.source_path)
-            except Exception as e:
-                logger.warning('[HLS %d] Attachment stripping failed (will attempt probe anyway): %s',
-                               self.file_id, e)
 
             # 2. Probe
             self.init_stage = 'probing'
@@ -417,6 +370,10 @@ class HLSSession:
 
         cmd = [
             config.FFMPEG_PATH, '-y', '-hide_banner', '-loglevel', 'warning',
+            # Explicit probing limits — prevents FFmpeg from hanging on
+            # MKV files with font attachment streams (the Docker bug).
+            '-analyzeduration', '10000000',   # 10 seconds
+            '-probesize', '50000000',         # 50 MB
             '-i', self.source_path,
             *stream_args, *codec_args,
             '-f', 'hls',
@@ -1111,8 +1068,8 @@ def _process_reencode_job(item: dict):
         cmd = [
             config.FFMPEG_PATH, '-y', '-hide_banner', '-loglevel', 'warning',
             '-analyzeduration', '10000000', '-probesize', '50000000',
-            '-ignore_unknown', '-i', source_path,
-            '-map', '0:v', '-map', '0:a', '-map', '0:s?',  # only V/A/S, skip data
+            '-i', source_path,
+            '-map', '0', '-dn',  # exclude data/attachment streams
             '-c:v', 'libx265', '-crf', '18', '-preset', 'slow',
             '-pix_fmt', 'yuv420p',
             '-c:a', 'aac', '-b:a', '192k', '-ac', '2',
