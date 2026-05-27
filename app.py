@@ -14,8 +14,8 @@ import os
 import threading
 import uuid
 import mimetypes
-import zipfile
 from functools import wraps
+from zipstream import ZipStream, ZIP_DEFLATED
 
 from flask import (
     Flask, request, Response, jsonify, render_template,
@@ -615,7 +615,12 @@ def download_file(file_id):
 @app.route('/download-folder/<int:folder_id>')
 @login_required
 def download_folder(folder_id):
-    """Download an entire folder as a streamed ZIP archive."""
+    """Download an entire folder as a streamed ZIP archive.
+
+    Uses zipstream-ng to stream both the ZIP container and the
+    decrypted file contents chunk-by-chunk, keeping memory usage
+    low regardless of total folder size.
+    """
     enc = _get_encryptor()
     if enc is None:
         abort(403)
@@ -636,27 +641,22 @@ def download_folder(folder_id):
             else:
                 yield (path, item)
 
-    def _generate_zip():
-        """Stream a ZIP file, writing decrypted files on the fly."""
-        buf = io.BytesIO()
-        with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
-            for zip_path, item in _collect_files(folder_id, ''):
-                vault_path = os.path.join(config.VAULT_DIR, item['vault_filename'])
-                if not os.path.exists(vault_path):
-                    continue
-                # Decrypt the entire file into memory and add to zip
-                data = b''.join(enc.decrypt_full(vault_path))
-                zf.writestr(zip_path, data)
-        buf.seek(0)
-        while True:
-            chunk = buf.read(65536)
-            if not chunk:
-                break
+    def _decrypted_stream(vault_path):
+        """Yield decrypted chunks of a vault file (bounded by chunk_size)."""
+        for chunk in enc.decrypt_full(vault_path):
             yield chunk
+
+    # Build the ZipStream with deflated compression
+    zs = ZipStream(compress_type=ZIP_DEFLATED)
+    for zip_path, item in _collect_files(folder_id, ''):
+        vault_path = os.path.join(config.VAULT_DIR, item['vault_filename'])
+        if not os.path.exists(vault_path):
+            continue
+        zs.add(_decrypted_stream(vault_path), zip_path)
 
     safe_name = folder['name'].replace('"', '\\"')
     resp = Response(
-        _generate_zip(),
+        zs,
         mimetype='application/zip',
         direct_passthrough=True,
     )
