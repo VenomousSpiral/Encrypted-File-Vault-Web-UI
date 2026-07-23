@@ -622,15 +622,22 @@ class HLSSession:
             '-probesize', '500000000',         # 500 MB
             '-ignore_unknown',                 # skip streams with unknown codec
             '-i', self.source_path,
-            '-map', '0:v:0',                   # only first video (not cover pic)
-            '-map', '0:a',
-            '-map', '0:s',
+        ]
+        # Build map args — use '?' suffix for optional subtitle stream to avoid
+        # "Invalid stream specification" errors when no subtitles exist.
+        cmd.extend(['-map', '0:v:0'])     # only first video (not cover pic)
+        cmd.extend(['-map', '0:a'])      # all audio tracks
+        cmd.extend(['-map', '0:s?'])     # optional subtitles (?) = error-free if none
+        codec_args = [
             '-c:v', 'libx265', '-crf', '18', '-preset', 'slow',
             '-pix_fmt', 'yuv420p',
             '-c:a', 'aac', '-b:a', '192k', '-ac', '2',
-            '-c:s', 'copy',
-            '-f', 'matroska', output_path,
         ]
+        # Only add -c:s copy if subtitle streams actually exist
+        if self.subtitle_streams:
+            codec_args.extend(['-c:s', 'copy'])
+        cmd.extend(codec_args)
+        cmd.extend(['-f', 'matroska', output_path])
 
         logger.info('[HLS %d] Overwrite cmd: %s',
                     self.file_id, ' '.join(cmd))
@@ -1079,15 +1086,23 @@ def _process_reencode_job(item: dict):
             '-probesize', '500000000',         # 500 MB
             '-ignore_unknown',                 # skip streams with unknown codec
             '-i', source_path,
-            '-map', '0:v:0',                   # only first video (not cover pic)
-            '-map', '0:a',
-            '-map', '0:s',
+        ]
+        # Build map args — use '?' suffix for optional subtitle stream to avoid
+        # "Invalid stream specification" errors when no subtitles exist.
+        cmd.extend(['-map', '0:v:0'])     # only first video (not cover pic)
+        cmd.extend(['-map', '0:a'])      # all audio tracks
+        cmd.extend(['-map', '0:s?'])     # optional subtitles (?) = error-free if none
+        codec_args = [
             '-c:v', 'libx265', '-crf', '18', '-preset', 'slow',
             '-pix_fmt', 'yuv420p',
             '-c:a', 'aac', '-b:a', '192k', '-ac', '2',
-            '-c:s', 'copy',
-            '-f', 'matroska', output_path,
         ]
+        # Only add -c:s copy if subtitle streams actually exist
+        if video_streams and any(s.get('codec_type') == 'subtitle'
+                                  for s in (info.get('streams', []))):
+            codec_args.extend(['-c:s', 'copy'])
+        cmd.extend(codec_args)
+        cmd.extend(['-f', 'matroska', output_path])
 
         logger.info('[RE %d] Re-encoding (video=%s pix_fmt=%s, %d non-AAC audio)…',
                     file_id, vc, pix_fmt, len(non_aac))
