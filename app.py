@@ -703,6 +703,29 @@ def _media_category(mime):
     return 'other'
 
 
+# ── sort helpers for sibling navigation ────────────────────────
+def _sort_files(files, sort_by='name'):
+    """Sort a list of file dicts by the given preference.
+
+    Returns files sorted in ascending order so prev/next indices work correctly.
+    For 'recent' and 'added', descending means newest first (reverse = True).
+    For 'size', largest first (descending).
+    """
+    if sort_by == 'name':
+        # Ascending alphabetical
+        files.sort(key=lambda d: (d.get('name') or '').lower())
+    elif sort_by in ('recent', 'added', 'size'):
+        # Descending = newest/largest first, so we reverse for ascending prev/next logic
+        if sort_by == 'recent':
+            files.sort(key=lambda d: (d.get('last_accessed') or ''), reverse=True)
+        elif sort_by == 'added':
+            files.sort(key=lambda d: (d.get('created_at') or ''), reverse=True)
+        else:
+            # size descending
+            files.sort(key=lambda d: int(d.get('size') or 0), reverse=True)
+    return files
+
+
 def _collect_recursive(uid, parent_id, cat, mk, exclude_id=None):
     """Collect all non-directory files of a given category recursively."""
     items = list_files(uid, parent_id, key=mk)
@@ -723,7 +746,9 @@ def api_siblings(file_id):
 
     Accepts optional ?root=<parent_id> (or 'null' for vault root) to
     compute the recursive total from a specific ancestor directory
-    instead of the file's immediate parent.
+    instead of the file's immediate parent. Also accepts:
+      - sort_by=name|recent|added|size  – which sort order prev/next uses (default: name)
+      - recurse=0|1                    – whether navigation spans subdirs (default: 1)
     """
     uid = current_user.id
     mk = _get_master_key()
@@ -733,19 +758,24 @@ def api_siblings(file_id):
 
     cat = _media_category(f.get('mime_type'))
 
-    # Sequential prev/next among direct siblings in the same folder
-    siblings = list_files(uid, f['parent_id'], key=mk)
-    typed = [s for s in siblings if not s['is_directory'] and _media_category(s.get('mime_type')) == cat]
-    typed.sort(key=lambda d: (d.get('name') or '').lower())
+    # ── resolve sort_by from query params (falls back to user pref) ────
+    raw_sort = request.args.get('sort_by', '').strip().lower()
+    if raw_sort in ('name', 'recent', 'added', 'size'):
+        sort_by = raw_sort
+    else:
+        # fall back to stored preference
+        prefs = get_user_preferences(uid, key=mk)
+        sort_by = (prefs.get('sort_preference') or 'name').strip().lower()
+        if sort_by not in ('name', 'recent', 'added', 'size'):
+            sort_by = 'name'
 
-    ids = [s['id'] for s in typed]
-    try:
-        idx = ids.index(file_id)
-    except ValueError:
-        idx = -1
-
-    prev_id = ids[idx - 1] if idx > 0 else None
-    next_id = ids[idx + 1] if idx >= 0 and idx < len(ids) - 1 else None
+    # ── resolve recurse from query params (falls back to 1) ───────────
+    raw_recurse = request.args.get('recurse', '').strip()
+    if raw_recurse in ('0', 'no', 'false'):
+        do_recurse = False
+    else:
+        # default: recurse through subdirs when browsing from a root context
+        do_recurse = True
 
     # Use explicit root if provided, otherwise file's parent
     root_raw = request.args.get('root', None)
@@ -754,31 +784,48 @@ def api_siblings(file_id):
     else:
         root_id = f['parent_id']
 
-    # Recursive total from the root directory
-    all_recursive = _collect_recursive(uid, root_id, cat, mk)
-    all_recursive.sort(key=lambda d: (d.get('name') or '').lower())
-    rec_ids = [s['id'] for s in all_recursive]
+    # ── Build the collection to navigate within (prev/next) ────────────
+    if do_recurse:
+        # Full recursive collection sorted by current preference
+        all_recursive = _collect_recursive(uid, root_id, cat, mk)
+        typed_collection = _sort_files(all_recursive, sort_by)
+    else:
+        # Direct siblings only in the same folder, using active sort
+        direct_siblings = list_files(uid, f['parent_id'], key=mk)
+        typed_collection = [s for s in direct_siblings if not s['is_directory'] and _media_category(s.get('mime_type')) == cat]
+        typed_collection = _sort_files(typed_collection, sort_by)
+
+    ids_in_order = [s['id'] for s in typed_collection]
     try:
-        rec_idx = rec_ids.index(file_id)
+        idx = ids_in_order.index(file_id)
     except ValueError:
-        rec_idx = -1
+        idx = -1
+
+    prev_id = ids_in_order[idx - 1] if idx > 0 else None
+    next_id = ids_in_order[idx + 1] if idx >= 0 and idx < len(ids_in_order) - 1 else None
+
+    # ── Total & position (match recursion mode used for navigation) ─
+    total_count = len(typed_collection)
+    current_position = idx + 1 if idx >= 0 else 0
 
     return jsonify({
         'prev_id': prev_id,
         'next_id': next_id,
-        'total': len(rec_ids),
-        'position': rec_idx + 1 if rec_idx >= 0 else 0,
+        'total': total_count,
+        'position': current_position,
         'root_parent_id': root_id,
+        'sort_by': sort_by,
+        'recurse': do_recurse,
     })
 
 
 @app.route('/api/random-sibling/<int:file_id>')
 @login_required
 def api_random_sibling(file_id):
-    """Return a random file of the same type from a directory tree.
+    """Return a random file of the same type.
 
-    Accepts optional ?root=<parent_id> to anchor the search to the
-    original browsing directory, not the current file's parent.
+    Accepts optional ?root=<parent_id> to anchor search to original browsing dir,
+    and ?recurse=0|1 (default 1) to limit selection to current folder only when off.
     """
     uid = current_user.id
     mk = _get_master_key()
@@ -788,6 +835,10 @@ def api_random_sibling(file_id):
 
     cat = _media_category(f.get('mime_type'))
 
+    # Resolve recursion mode (default: recurse through subdirs)
+    raw_recurse = request.args.get('recurse', '').strip()
+    do_recurse = not raw_recurse in ('0', 'no', 'false')
+
     # Use explicit root if provided, otherwise fall back to file's parent
     root_raw = request.args.get('root', None)
     if root_raw is not None:
@@ -795,7 +846,18 @@ def api_random_sibling(file_id):
     else:
         root_id = f['parent_id']
 
-    candidates = _collect_recursive(uid, root_id, cat, mk, exclude_id=file_id)
+    if do_recurse:
+        # Full recursive collection across subdirectories
+        candidates = _collect_recursive(uid, root_id, cat, mk, exclude_id=file_id)
+    else:
+        # Current-dir only: same parent folder as the current file
+        direct_siblings = list_files(uid, f['parent_id'], key=mk)
+        candidates = [s for s in direct_siblings 
+                      if not s['is_directory'] and _media_category(s.get('mime_type')) == cat]
+    
+    # Exclude current file from random selection
+    candidates = [c for c in candidates if c['id'] != file_id]
+    
     if not candidates:
         return jsonify({'file_id': None})
 

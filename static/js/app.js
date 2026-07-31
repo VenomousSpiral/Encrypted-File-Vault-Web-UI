@@ -239,7 +239,8 @@ function openFile(f) {
     // Text-editable files → editor
     if (isTextEditable(f)) {
         const fromParam = currentParentId !== null ? `?from=${currentParentId}` : '?from=root';
-        window.location.href = `/editor/${f.id}${fromParam}`;
+        const extraParams = '&sort_by=' + encodeURIComponent(currentSort || 'name');
+        window.location.href = `/editor/${f.id}${fromParam}${extraParams}`;
         return;
     }
     // CBZ files → CBZ reader
@@ -247,13 +248,19 @@ function openFile(f) {
     const name = (f.name || '').toLowerCase();
     if (mime === 'application/vnd.comicbook+zip' || name.endsWith('.cbz')) {
         const fromParam = currentParentId !== null ? `?from=${currentParentId}` : '?from=root';
-        window.location.href = `/cbz/${f.id}${fromParam}`;
+        const extraParams = '&sort_by=' + encodeURIComponent(currentSort || 'name');
+        window.location.href = `/cbz/${f.id}${fromParam}${extraParams}`;
         return;
     }
     if (mime.startsWith('video/') || mime.startsWith('audio/') ||
         mime.startsWith('image/') || mime === 'application/pdf') {
         const fromParam = currentParentId !== null ? `?from=${currentParentId}` : '?from=root';
-        window.location.href = `/player/${f.id}${fromParam}`;
+        // Pass sort preference and recursion state so player navigation respects explorer settings
+        const extraParams = [
+            '&sort_by=' + encodeURIComponent(currentSort || 'name'),
+            '&recurse=' + (localStorage.getItem('vault_recurse') !== '0' ? 1 : 0)
+        ].join('');
+        window.location.href = `/player/${f.id}${fromParam}${extraParams}`;
     } else {
         window.location.href = `/download/${f.id}`;
     }

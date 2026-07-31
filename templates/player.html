@@ -3,8 +3,9 @@
 
 {% block head %}
 <style>
-    .nav-btn { min-width: 32px; }
+.nav-btn { min-width: 32px; }
     .shuffle-btn.active { color: #fff; background-color: var(--bs-primary); border-color: var(--bs-primary); }
+    .recurse-btn.active { color: #fff; background-color: var(--bs-success); border-color: var(--bs-success); }
     .nav-pos { font-size: .7rem; color: #8b949e; white-space: nowrap; }
 </style>
 {% endblock %}
@@ -28,6 +29,9 @@
             </button>
             <button class="btn btn-sm btn-outline-secondary shuffle-btn" id="shuffleBtn" title="Shuffle">
                 <i class="fas fa-random"></i>
+            </button>
+            <button class="btn btn-sm btn-outline-success recurse-btn active" id="recurseBtn" title="Toggle recursive navigation (spans subdirectories)">
+                <i class="fas fa-layer-group me-1"></i><span class="d-none d-md-inline">Recursive</span>
             </button>
         </div>
         <a href="{{ url_for('download_file', file_id=file.id) }}" class="btn btn-sm btn-outline-primary">
@@ -727,70 +731,193 @@
     const prevBtn    = document.getElementById('prevBtn');
     const nextBtn    = document.getElementById('nextBtn');
     const shuffleBtn = document.getElementById('shuffleBtn');
+    const recurseBtn = document.getElementById('recurseBtn');
     const navPos     = document.getElementById('navPos');
 
-    let shuffleOn = localStorage.getItem('vault_shuffle') === '1';
+    // ── State: sort, recursion, history stacks ───────────────────────
+    let shuffleOn  = localStorage.getItem('vault_shuffle') === '1';
+
+    // Restore visual state from localStorage on every page load
+    if (shuffleOn) {
+        shuffleBtn.classList.add('active');
+    }
+
+    // Read URL params first (set by explorer navigation), fall back to stored pref
+    const urlParams2 = new URLSearchParams(window.location.search);
+    let recurseOn  = true;
+    if (urlParams2.has('recurse')) {
+        recurseOn = !['0', 'no', 'false'].includes(urlParams2.get('recurse').trim());
+    } else {
+        recurseOn = localStorage.getItem('vault_recurse') !== '0';  // default ON
+    }
     let siblingData = null;
 
-    // Determine shuffle root: the folder the user originally browsed from.
-    // Priority: URL ?from= param (set by explorer) > localStorage > file's own parent
-    const urlParams = new URLSearchParams(window.location.search);
-    let rootParentId = null;
+    // ── Persistent visit-history (survives full-page navigations) ─────
+    // Two independent histories: one for sort-based nav, one for shuffle.
+    // Each stores an array of file IDs + current pointer index.
+
+    function loadHistory(mode) {
+        const key = 'vault_nav_' + mode;
+        try { return JSON.parse(sessionStorage.getItem(key)); }
+        catch { return null; }
+    }
+    function saveHistory(mode, data) {
+        sessionStorage.setItem('vault_nav_' + mode, JSON.stringify(data));
+    }
+
+    let normalNav  = loadHistory('normal') || { history: [], idx: -1 };
+    let shuffleNav = loadHistory('shuffle') || { history: [], idx: -1 };
+
+    // Determine root parent (original browsing point)
+    const urlParams   = new URLSearchParams(window.location.search);
+    let   rootParentId = null;
     if (urlParams.has('from')) {
-        // Fresh navigation from explorer — this is the authoritative root
         rootParentId = urlParams.get('from') === 'root' ? 'null' : urlParams.get('from');
         localStorage.setItem('vault_shuffle_root', rootParentId);
     } else {
-        // Navigated here via prev/next/shuffle — use stored root
-        rootParentId = localStorage.getItem('vault_shuffle_root');
+        const stored = localStorage.getItem('vault_shuffle_root');
+        if (stored !== null) rootParentId = stored;
     }
 
-    // Build a root query-string value for the API calls
-    function rootQS() {
-        if (rootParentId === null || rootParentId === undefined) return '';
-        return (rootParentId === 'null') ? '?root=null' : '?root=' + rootParentId;
+    // Build a proper query-string with all params using URLSearchParams
+    function buildParams(overrideSort) {
+        const qs = new URLSearchParams();
+        if (overrideSort || currentSort) {
+            qs.set('sort_by', overrideSort || currentSort);
+        }
+        qs.set('recurse', recurseOn ? '1' : '0');
+        if (rootParentId !== null && rootParentId !== undefined) {
+            qs.set('root', rootParentId === 'null' ? '' : rootParentId);
+        }
+        return '?' + qs.toString();
     }
 
-    // Restore shuffle state
-    if (shuffleOn) shuffleBtn.classList.add('active');
+    // ── Recursive toggle button ─────────────────────────────────────
+    recurseBtn.addEventListener('click', () => {
+        recurseOn = !recurseOn;
+        recurseBtn.classList.toggle('active', recurseOn);
+        localStorage.setItem('vault_recurse', recurseOn ? '1' : '0');
+        // Update label
+        const icon = recurseBtn.querySelector('i');
+        const labelEl = recurseBtn.querySelector('.d-none.d-md-inline, span');
+        if (labelEl) {
+            labelEl.textContent = recurseOn ? 'Recursive' : 'Current Dir Only';
+        }
+        // Re-fetch siblings with new recursion setting
+        loadSiblings(FILE_ID);
+    });
+    // Set initial label / active state
+    if (!recurseOn) recurseBtn.classList.remove('active');
 
+    // ── Shuffle toggle button ───────────────────────────────────────
     shuffleBtn.addEventListener('click', () => {
         shuffleOn = !shuffleOn;
         shuffleBtn.classList.toggle('active', shuffleOn);
         localStorage.setItem('vault_shuffle', shuffleOn ? '1' : '0');
     });
 
-    // Load sibling info (pass root so total includes the full tree)
-    fetch('/api/siblings/' + FILE_ID + rootQS(), { credentials: 'same-origin' })
-        .then(r => r.json())
-        .then(data => {
-            siblingData = data;
-            // If we still don't have a root, store the one the API computed
-            if (rootParentId === null && data.root_parent_id !== undefined) {
-                rootParentId = (data.root_parent_id === null) ? 'null' : String(data.root_parent_id);
-                localStorage.setItem('vault_shuffle_root', rootParentId);
-            }
-            if (data.total > 0) {
-                navPos.textContent = data.position + ' / ' + data.total;
-            }
-            if (data.prev_id) {
-                prevBtn.disabled = false;
-                prevBtn.addEventListener('click', () => navigateTo(data.prev_id));
-            }
-            if (data.next_id || data.total > 1) {
-                nextBtn.disabled = false;
-            }
-            nextBtn.addEventListener('click', goNext);
-        })
-        .catch(err => console.error('Siblings load error:', err));
-
-    function navigateTo(fileId) {
-        if (fileId) window.location.href = '/player/' + fileId;
+    // ── Load sibling info (prev/next positions) ─────────────────────
+    function loadSiblings(fileId, sortOverride) {
+        const qs = buildParams(sortOverride);
+        fetch('/api/siblings/' + fileId + qs, { credentials: 'same-origin' })
+            .then(r => r.json())
+            .then(data => {
+                siblingData = data;
+                // Resolve root if not yet known
+                if (rootParentId === null && data.root_parent_id !== undefined) {
+                    rootParentId = (data.root_parent_id === null) ? 'null' : String(data.root_parent_id);
+                    localStorage.setItem('vault_shuffle_root', rootParentId);
+                }
+                // Update position counter
+                if (data.total > 0) {
+                    navPos.textContent = data.position + ' / ' + data.total;
+                } else {
+                    navPos.textContent = '0 / 0';
+                }
+                // Enable/disable buttons based on available navigation targets
+                const hasPrev = canGoBack('normal') || siblingData.prev_id != null;
+                prevBtn.disabled = !hasPrev;
+                
+                const hasNext = siblingData.next_id !== null && siblingData.next_id !== undefined;
+                nextBtn.disabled = !hasNext;
+            })
+            .catch(err => console.error('Siblings load error:', err));
     }
 
+    // Read sort_from_url param first (set by explorer navigation), fall back to stored pref
+    let currentSort = 'name';
+    if (urlParams2.has('sort_by')) {
+        const val = urlParams2.get('sort_by').trim().toLowerCase();
+        if (['name', 'recent', 'added', 'size'].includes(val)) {
+            currentSort = val;
+            localStorage.setItem('vault_sort_pref', currentSort);
+        }
+    } else {
+        const stored = localStorage.getItem('vault_sort_pref');
+        if (stored && ['name', 'recent', 'added', 'size'].includes(stored)) {
+            currentSort = stored;
+        }
+    }
+
+    // Apply initial recursion state to UI
+    recurseBtn.classList.toggle('active', recurseOn);
+    const labelEl2 = recurseBtn.querySelector('.d-none.d-md-inline, span');
+    if (labelEl2) labelEl2.textContent = recurseOn ? 'Recursive' : 'Current Dir Only';
+
+    // ── Initialize history when entering from explorer (first-time entry) ─
+    if (urlParams.has('from')) {
+        normalNav.history.push(FILE_ID);
+        normalNav.idx = normalNav.history.length - 1;
+        shuffleNav.history.push(FILE_ID);
+        shuffleNav.idx = shuffleNav.history.length - 1;
+        saveHistory('normal', normalNav);
+        saveHistory('shuffle', shuffleNav);
+    }
+
+    // Initial siblings fetch with URL params and current sort preference
+    loadSiblings(FILE_ID);
+
+    // ── Navigation helpers for persistent session history ───────────
+
+    function advanceHistory(modeStack, modeIdx, fileId) {
+        if (modeIdx < modeStack.history.length - 1) {
+            // We went forward at some point — truncate future entries
+            modeStack.history = modeStack.history.slice(0, modeIdx + 1);
+        }
+        modeStack.history.push(fileId);
+        modeStack.idx = modeStack.history.length - 1;
+    }
+
+    function canGoBack(mode) {
+        const nav = (mode === 'shuffle') ? shuffleNav : normalNav;
+        return nav.idx > 0;  // idx=0 means we're at the first entry, nothing to go back to
+    }
+
+    function getPrevEntry(mode) {
+        const nav = (mode === 'shuffle') ? shuffleNav : normalNav;
+        if (nav.idx <= 0) return null;
+        return nav.history[nav.idx - 1];
+    }
+
+    // ── Navigation: go back (history when shuffling, sort-order when not) ─
+    function goBack() {
+        if (shuffleOn && shuffleNav.idx > 0) {
+            const target = shuffleNav.history[shuffleNav.idx - 1];
+            shuffleNav.idx--;
+            normalNav.idx--;
+            saveHistory('shuffle', shuffleNav);
+            saveHistory('normal', normalNav);
+            window.location.href = '/player/' + target;
+        } else if (siblingData && siblingData.prev_id) {
+            navigateTo(siblingData.prev_id);
+        }
+    }
+
+    // ── Navigation: go next (respects shuffle / sort order, persists history) ─
     function goNext() {
         if (shuffleOn) {
-            fetch('/api/random-sibling/' + FILE_ID + rootQS(), { credentials: 'same-origin' })
+            const qs = buildParams();  // includes recurse param for random-sibling
+            fetch('/api/random-sibling/' + FILE_ID + qs, { credentials: 'same-origin' })
                 .then(r => r.json())
                 .then(data => {
                     if (data.file_id) navigateTo(data.file_id);
@@ -801,12 +928,28 @@
         }
     }
 
+    // ── Navigate to file with persistent session history tracking ────
+    function navigateTo(fileId) {
+        if (!fileId || fileId === FILE_ID) return;
+        advanceHistory(normalNav, normalNav.idx, fileId);
+        advanceHistory(shuffleNav, shuffleNav.idx, fileId);  // always sync both stacks
+        saveHistory('shuffle', shuffleNav);
+        saveHistory('normal', normalNav);
+        window.location.href = '/player/' + fileId;
+    }
+
+    prevBtn.addEventListener('click', goBack);
+    nextBtn.addEventListener('click', () => {
+        if (siblingData && siblingData.next_id) nextBtn.disabled = true;  // prevent double-click during nav
+        goNext();
+    });
+
     // Keyboard shortcuts: left/right arrows only when not in video player context
     {% if not mime.startswith('video/') %}
     document.addEventListener('keydown', (e) => {
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') return;
         if (e.key === 'ArrowRight') { e.preventDefault(); goNext(); }
-        if (e.key === 'ArrowLeft' && siblingData && siblingData.prev_id) { e.preventDefault(); navigateTo(siblingData.prev_id); }
+        if (e.key === 'ArrowLeft')  { e.preventDefault(); goBack(); }
     });
     {% endif %}
 })();
