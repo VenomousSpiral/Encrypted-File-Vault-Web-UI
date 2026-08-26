@@ -35,6 +35,33 @@ instance/
 *.sqlite
 *.sqlite3
 
-# Temporary files
-*.tmp
-*.log
+# Docs (working drafts)
+docs/
+
+# Test coverage & reports
+tests/
+htmlcov/
+.coverage*
+.pytest_cache/
+osv/  # pytest-open-files output
+
+# Package/build artifacts
+*.egg-info/
+.eggs/
+dist/
+build/
+out/
+packages/
+.wheelfile
+MANIFEST
+
+# Node (frontend tooling)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+.DS_Store

@@ -20,6 +20,7 @@ import os
 import sqlite3
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.exceptions import InvalidTag as _CryptoInvalidTag
 
 from config import DB_PATH
 
@@ -653,6 +654,88 @@ def _collect_vault_files(db, file_id: int, result: list[str]):
             _collect_vault_files(db, child['id'], result)
 
 
+def _compute_recursive_sizes(owner_id: int, parent_id,
+                              *, key=None) -> dict[int, int]:
+    """Compute total size (bytes) for every directory under *parent_id*.
+
+    Returns {dir_id → total_bytes_including_all_descendants}.
+    File ids are not included in the map — files use their own .size field.
+
+    Algorithm:
+      1. BFS from parent_id to collect all descendant file IDs.
+      2. Single SQL query fetches id, parent_id, is_directory, size for those rows.
+      3. Build parent→children adjacency + leaf-size map in Python.
+      4. Post-order DFS: sizes bubble up from leaves → parents.
+    """
+    db = get_db()
+
+    # ── Step 1 & 2: collect descendants and fetch their data ───────────
+    if parent_id is None:
+        rows = db.execute(
+            'SELECT id, parent_id, is_directory, size FROM files WHERE owner_id = ?',
+            (owner_id,),
+        ).fetchall()
+    else:
+        # BFS to find all descendants of this folder
+        descendant_ids: set[int] = {parent_id}
+        queue: list[int] = [parent_id]
+        while queue:
+            current = queue.pop(0)
+            kids = db.execute(
+                'SELECT id FROM files WHERE parent_id = ?', (current,),
+            ).fetchall()
+            for k in kids:
+                kid_id = k['id']
+                if kid_id not in descendant_ids:
+                    descendant_ids.add(kid_id)
+                    queue.append(kid_id)
+
+        placeholders = ','.join('?' * len(descendant_ids))
+        rows = db.execute(
+            f'SELECT id, parent_id, is_directory, size FROM files '
+            f'WHERE owner_id = ? AND id IN ({placeholders})',
+            [owner_id] + list(descendant_ids),
+        ).fetchall()
+
+    db.close()
+
+    # ── Step 3: build adjacency maps in Python ─────────────────────────
+    by_parent: dict[int | None, list[int]] = {}
+    is_dir_map: dict[int, bool] = {}
+    file_size_map: dict[int, int] = {}   # leaf files only
+
+    for r in rows:
+        rid = r['id']
+        pid = r['parent_id']
+        by_parent.setdefault(pid, []).append(rid)
+        is_dir_map[rid] = bool(r['is_directory'])
+        if not r['is_directory'] and key:
+            # size column is encrypted — decrypt to get actual byte count
+            raw_size = r['size'] or b''
+            file_size_map[rid] = _decrypt_value(key, raw_size)  # int
+        elif not r['is_directory']:
+            # No key provided (fallback): assume plaintext size if possible
+            try: file_size_map[rid] = int(r['size'])
+            except (TypeError, ValueError):
+                file_size_map[rid] = 0
+
+    # ── Step 4: post-order DFS — sizes bubble up ───────────────────────
+    totals: dict[int, int] = {}
+
+    def dfs(node_id):
+        total = 0
+        for child_id in by_parent.get(node_id, []):
+            if is_dir_map[child_id]:
+                total += dfs(child_id)   # recurse into subdirectory
+            else:
+                total += file_size_map.get(child_id, 0)
+        totals[node_id] = total
+        return total
+
+    dfs(parent_id)
+    return totals
+
+
 def get_breadcrumbs(owner_id: int, parent_id, *, key: bytes | None = None) -> list[dict]:
     """Return a breadcrumb list [{id, name}, …] from root to *parent_id*."""
     crumbs: list[dict] = [{'id': None, 'name': 'Root'}]
@@ -715,6 +798,7 @@ _USER_PREF_DEFAULTS = {
     'skip_amount': 15,
     'sort_preference': 'name',
     'audio_cache_mode': 'keep',
+    'show_dir_size': False,        # show recursive directory sizes in explorer
 }
 
 
@@ -730,8 +814,15 @@ def get_user_preferences(user_id: int, *, key: bytes | None = None) -> dict:
     d = dict(row)
     blob = d.get('prefs_blob')
     if key and _is_encrypted_blob(blob):
-        prefs = _decrypt_value(key, blob)
-        # Merge with defaults in case new pref keys are added later
+        try:
+            prefs = _decrypt_value(key, blob)
+        except (_CryptoInvalidTag, Exception):
+            # Decryption failed — user's prefs_blob was encrypted under
+            # a different master key (e.g. password changed but the old
+            # prefs row wasn't re-wrapped).  Return defaults so they can
+            # still use the app; their next save will encrypt with the
+            # current key.
+            return dict(_USER_PREF_DEFAULTS)
         result = dict(_USER_PREF_DEFAULTS)
         result.update(prefs)
         return result
@@ -756,6 +847,7 @@ def set_user_preferences(user_id: int, audio_lang: str = '',
                          skip_amount: int = 15,
                          sort_preference: str = 'name',
                          audio_cache_mode: str = 'keep',
+                         show_dir_size: bool = False,
                          *, key: bytes | None = None):
     prefs = {
         'default_audio_lang': audio_lang,
@@ -764,6 +856,7 @@ def set_user_preferences(user_id: int, audio_lang: str = '',
         'skip_amount': skip_amount,
         'sort_preference': sort_preference,
         'audio_cache_mode': audio_cache_mode,
+        'show_dir_size': bool(show_dir_size),
     }
     if key:
         enc_blob = _encrypt_value(key, prefs)

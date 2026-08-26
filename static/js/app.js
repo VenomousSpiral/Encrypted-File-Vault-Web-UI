@@ -9,9 +9,10 @@ let moveParentId = null;   // current folder inside Move dialog
 let moveNavHistory = [];   // back-stack for Move dialog navigation
 let uploadQueue = [];
 let uploading = false;
-let currentSort = (typeof window.__SORT_PREF !== 'undefined' ? window.__SORT_PREF : 'name');
-let currentFiles = [];     // raw file list from server (for re-sorting)
-let searchActive = false;  // true when showing search results
+let currentSort       = (typeof window.__SORT_PREF    !== 'undefined' ? window.__SORT_PREF    : 'name');
+let showDirSize        = typeof window.__SHOW_DIR_SIZE === 'boolean'   ? window.__SHOW_DIR_SIZE : false;
+let currentFiles      = [];     // raw file list from server (for re-sorting)
+let searchActive       = false;  // true when showing search results
 
 // ── multi-select state ──────────────────────────────────────────────
 let selectMode = false;  // true when multi-select is active
@@ -127,6 +128,11 @@ function renderFiles(files) {
             </div>
             <div class="file-meta">
                 ${f.is_directory ? '' : `<span class="size">${humanSize(f.size)}</span>`}
+                <span class="dir-size" style="
+                    display: ${showDirSize && f.is_directory && (f.recursive_size || 0) > 0
+                        ? 'inline' : 'none'
+                    }"
+                >(${humanSize(f.recursive_size)})</span>
                 <span class="date ms-3">${relTime(f.modified_at || f.created_at)}</span>
             </div>`;
 

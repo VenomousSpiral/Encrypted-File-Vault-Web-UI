@@ -95,6 +95,13 @@ body {
 }
 .file-meta .size { min-width: 70px; display: inline-block; text-align: right; }
 
+/* Directory recursive size (shown parenthetically) */
+.file-meta .dir-size {
+    color: var(--v-muted);
+    opacity: 0.5;
+    font-style: italic;
+}
+
 /* ── context menu ────────────────────────────────────────────────── */
 .context-menu {
     position: fixed;
@@ -418,6 +425,10 @@ body {
 }
 
 /* smaller screens: shrink padding */
+@media (max-width: 768px) {
+    .file-meta .dir-size { display: none !important; }
+}
+
 @media (max-width: 576px) {
     .file-row { padding: .5rem .75rem; gap: .5rem; }
     .file-meta .date { display: none; }

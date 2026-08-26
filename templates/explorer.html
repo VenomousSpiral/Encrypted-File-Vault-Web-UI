@@ -2,7 +2,10 @@
 {% block title %}Files — Encrypted Vault{% endblock %}
 
 {% block content %}
-<script>window.__SORT_PREF = '{{ sort_preference|default("name", true) }}';</script>
+<script>
+    window.__SORT_PREF       = '{{ sort_preference|default("name", true) }}';
+    window.__SHOW_DIR_SIZE   = {{ 'true' if show_dir_size else 'false' }};
+</script>
 <!-- Toolbar -->
 <div class="toolbar px-3 py-2 border-bottom border-secondary bg-dark sticky-top">
   <div class="d-flex align-items-center">

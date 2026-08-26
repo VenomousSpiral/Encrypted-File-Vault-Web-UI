@@ -42,6 +42,7 @@ from models import (
     get_user_preferences, set_user_preferences,
     get_video_preferences, set_video_preferences, clear_all_video_preferences,
     get_all_video_last_accessed,
+    _compute_recursive_sizes,  # recursive directory size computation
     migrate_user_fields,
     get_audio_cache_info, clear_audio_cache, has_audio_cache,
     get_cbz_preferences, set_cbz_preferences, clear_cbz_preferences,
@@ -232,7 +233,11 @@ def logout():
 def explorer():
     mk = _get_master_key()
     prefs = get_user_preferences(current_user.id, key=mk)
-    return render_template('explorer.html', sort_preference=prefs.get('sort_preference', 'name'))
+    show_dir_size = bool(prefs.get('show_dir_size', False))
+    return render_template(
+        'explorer.html', sort_preference=prefs.get('sort_preference', 'name'),
+        show_dir_size=show_dir_size,
+    )
 
 
 # ── JSON API ─────────────────────────────────────────────────────────
@@ -242,6 +247,14 @@ def api_list_files():
     parent_id = request.args.get('parent_id', None, type=int)
     uid = current_user.id
     mk = _get_master_key()
+
+    # Only compute recursive sizes if user has enabled this feature
+    prefs = get_user_preferences(uid, key=mk)
+    show_dir_size = bool(prefs.get('show_dir_size', False))
+    size_map: dict[int, int] = {}
+    if show_dir_size:
+        size_map = _compute_recursive_sizes(uid, parent_id, key=mk)
+
     rows = list_files(uid, parent_id, key=mk)
 
     # Attach last_accessed from video_preferences for sort support
@@ -251,6 +264,8 @@ def api_list_files():
     for r in rows:
         d = dict(r)
         d['last_accessed'] = accessed_map.get(d['id'], '')
+        if show_dir_size and d['is_directory']:
+            d['recursive_size'] = size_map.get(d['id'], 0)
         file_list.append(d)
 
     crumbs = get_breadcrumbs(uid, parent_id, key=mk)
@@ -1073,8 +1088,9 @@ def api_set_preferences():
     cache_mode = data.get('audio_cache_mode', current.get('audio_cache_mode', 'keep')).strip().lower()
     if cache_mode not in ('keep', 'save', 'overwrite'):
         cache_mode = 'keep'
+    show_dir_size = bool(data.get('show_dir_size', current.get('show_dir_size', False)))
     set_user_preferences(current_user.id, audio_lang, sub_lang, sub_offset,
-                         skip_amt, sort_pref, cache_mode, key=mk)
+                         skip_amt, sort_pref, cache_mode, show_dir_size, key=mk)
     return jsonify({'success': True})
 
 

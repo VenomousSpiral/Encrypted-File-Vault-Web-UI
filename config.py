@@ -22,7 +22,7 @@ DB_PATH = os.path.join(DATA_DIR, 'vault.db')
 
 # Server
 HOST = os.environ.get('HOST', '0.0.0.0')
-PORT = int(os.environ.get('PORT', '5000'))
+PORT = int(os.environ.get('PORT', '6660'))
 DEBUG = os.environ.get('DEBUG', 'false').lower() in ('true', '1', 'yes')
 
 # 1 MB encryption chunks — good balance between seek granularity and throughput
