@@ -710,11 +710,17 @@ def _compute_recursive_sizes(owner_id: int, parent_id,
         by_parent.setdefault(pid, []).append(rid)
         is_dir_map[rid] = bool(r['is_directory'])
         if not r['is_directory'] and key:
-            # size column is encrypted — decrypt to get actual byte count
             raw_size = r['size'] or b''
-            file_size_map[rid] = _decrypt_value(key, raw_size)  # int
+            # Some files may still have plaintext integer sizes (pre-migration).
+            # _is_encrypted_blob checks: it must be bytes AND longer than nonce.
+            if isinstance(raw_size, int):
+                file_size_map[rid] = raw_size  # already a number
+            elif _is_encrypted_blob(raw_size):
+                file_size_map[rid] = _decrypt_value(key, raw_size)  # decrypt
+            else:
+                try: file_size_map[rid] = int(raw_size)
+                except (TypeError, ValueError): file_size_map[rid] = 0
         elif not r['is_directory']:
-            # No key provided (fallback): assume plaintext size if possible
             try: file_size_map[rid] = int(r['size'])
             except (TypeError, ValueError):
                 file_size_map[rid] = 0
