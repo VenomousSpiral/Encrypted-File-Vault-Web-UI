@@ -425,9 +425,6 @@ body {
 }
 
 /* smaller screens: shrink padding */
-@media (max-width: 768px) {
-    .file-meta .dir-size { display: none !important; }
-}
 
 @media (max-width: 576px) {
     .file-row { padding: .5rem .75rem; gap: .5rem; }
