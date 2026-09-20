@@ -39,7 +39,6 @@ instance/
 docs/
 
 # Test coverage & reports
-tests/
 htmlcov/
 .coverage*
 .pytest_cache/
