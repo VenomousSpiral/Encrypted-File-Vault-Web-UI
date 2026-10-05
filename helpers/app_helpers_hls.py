@@ -149,8 +149,12 @@ def api_hls_master(file_id):
     lines.append(_url_for('api_hls_video_playlist', file_id=file_id))
 
     body = '\n'.join(lines) + '\n'
+    cors_headers = {
+        'Access-Control-Allow-Origin': '*',
+        'Vary': 'Origin',
+    }
     return Response(body, mimetype='application/vnd.apple.mpegurl',
-                    headers={'Cache-Control': 'no-cache'})
+                    headers={**cors_headers, **{'Cache-Control': 'no-cache'}})
 
 
 def api_hls_video_playlist(file_id):
@@ -177,8 +181,12 @@ def api_hls_video_playlist(file_id):
     lines.append('#EXT-X-ENDLIST')
 
     body = '\n'.join(lines) + '\n'
+    cors_headers = {
+        'Access-Control-Allow-Origin': '*',
+        'Vary': 'Origin',
+    }
     return Response(body, mimetype='application/vnd.apple.mpegurl',
-                    headers={'Cache-Control': 'no-cache'})
+                    headers={**cors_headers, **{'Cache-Control': 'no-cache'}})
 
 
 def api_hls_audio_playlist(file_id, track):
@@ -205,8 +213,12 @@ def api_hls_audio_playlist(file_id, track):
     lines.append('#EXT-X-ENDLIST')
 
     body = '\n'.join(lines) + '\n'
+    cors_headers = {
+        'Access-Control-Allow-Origin': '*',
+        'Vary': 'Origin',
+    }
     return Response(body, mimetype='application/vnd.apple.mpegurl',
-                    headers={'Cache-Control': 'no-cache'})
+                    headers={**cors_headers, **{'Cache-Control': 'no-cache'}})
 
 
 def api_hls_subtitle_playlist(file_id, track):
@@ -243,9 +255,14 @@ def api_hls_segment(file_id, stream, track, seg_index):
     if data is None:
         return abort(404)
 
+    cors_headers = {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Expose-Headers': 'Content-Length',
+        'Vary': 'Origin',
+    }
     mime_type = 'video/mp2t' if stream == 'video' else 'audio/mp2t'
     return Response(data, mimetype=mime_type,
-                    headers={'Cache-Control': 'no-cache'})
+                    headers={**cors_headers, **{'Cache-Control': 'no-cache'}})
 
 
 def api_hls_subtitle_file(file_id, track):

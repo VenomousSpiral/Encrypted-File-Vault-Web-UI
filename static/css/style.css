@@ -380,6 +380,25 @@ body {
     color: #000;
 }
 
+
+
+/* ── search bar positioning ─────────────────────────────────────── */
+.search-input { width:180px; padding-left:28px !important; }
+.search-icon, .clear-search-btn { position:absolute; top:50%; transform:translateY(-50%); font-size:.7rem; pointer-events:none; color:var(--v-muted); }
+
+/* ── upload progress bar ─────────────────────────────────────── */
+.upload-progress-bar { height:3px !important; width:0% !important; transition:width .2s ease; }
+
+
+/* ── player page layout ─────────────────────────────────────────── */
+.player-page-layout { height: calc(100vh - 56px); }
+
+.shuffle-active, .shuffle-btn.active { color:#fff !important; background-color:var(--bs-primary) !important; border-color:var(--bs-primary) !important; }
+.recurse-active, .recurse-btn.active { color:#fff !important; background-color:var(--bs-success) !important; border-color:var(--bs-success) !important; }
+
+.nav-pos-text { font-size:.7rem; color:var(--v-muted); white-space:nowrap; }
+.loading-progress-bar { height:6px; background:#333; width:0%; transition:width .3s ease; }
+
 /* ── multi-select ─────────────────────────────────────────────────── */
 .select-checkbox {
     display: none;

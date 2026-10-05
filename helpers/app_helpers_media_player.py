@@ -172,12 +172,15 @@ def jsonify(d): return _jsonify(d)
 
 def explorer_page():
     """Render the file explorer HTML page."""
+    import flask_login as _fl  # noqa: F401
+
     from flask import render_template as _rt  # noqa: F821
     
     from helpers.app_helpers_auth import _get_master_key  # noqa: F821
     mk = _get_master_key()
-    
-    prefs = get_user_preferences(_cu.id, key=mk) if 'current_user' in dir() else {}
+    uid = _fl.current_user.id
+    from models import get_user_preferences  # noqa: F401
+    prefs = get_user_preferences(uid, key=mk)
 
     return _rt('explorer.html', 
                sort_preference=prefs.get('sort_preference', 'name'),
@@ -186,18 +189,21 @@ def explorer_page():
 
 def player_page(file_id):
     """Render the media player HTML page."""
+    import flask_login as _fl  # noqa: F401
+
     from flask import render_template as _rt  # noqa: F821
     
     from helpers.app_helpers_auth import _get_master_key  # noqa: F821
     mk = _get_master_key()
+    uid = _fl.current_user.id
     
     from models import get_file as _gf  # noqa: F821
-    f = _gf(file_id, _cu.id, key=mk)
+    f = _gf(file_id, uid, key=mk)
 
     from models import get_user_preferences as _gup  # noqa: F401
-    prefs = _gup(_cu.id, key=mk)
+    prefs = _gup(uid, key=mk)
     from models import get_video_preferences as _gvp  # noqa: F401
-    vprefs = _gvp(_cu.id, file_id, key=mk)
+    vprefs = _gvp(uid, file_id, key=mk)
     
     return _rt('player.html', file=dict(f), prefs=prefs, vprefs=vprefs)
 

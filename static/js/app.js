@@ -1,22 +1,22 @@
+'use strict';
 /* ═══════════════════════════════════════════════════════════════════
-   Encrypted Vault – frontend logic
+   Encrypted Vault – frontend logic (IIFE module)
+   All state is private; public API exposed via window.App
    ═══════════════════════════════════════════════════════════════════ */
-
-// ── state ───────────────────────────────────────────────────────────
-let currentParentId = null;   // null = root
-let contextFile = null;   // file object for context-menu target
-let moveParentId = null;   // current folder inside Move dialog
-let moveNavHistory = [];   // back-stack for Move dialog navigation
-let uploadQueue = [];
-let uploading = false;
-let currentSort       = (typeof window.__SORT_PREF    !== 'undefined' ? window.__SORT_PREF    : 'name');
-let showDirSize        = typeof window.__SHOW_DIR_SIZE === 'boolean'   ? window.__SHOW_DIR_SIZE : false;
-let currentFiles      = [];     // raw file list from server (for re-sorting)
-let searchActive       = false;  // true when showing search results
-
-// ── multi-select state ──────────────────────────────────────────────
-let selectMode = false;  // true when multi-select is active
-let selectedIds = new Set();  // set of selected file IDs
+(function() {
+    // ── private state ───────────────────────────────────────────────
+    let _currentParentId = null;   // null = root
+    let _contextFile = null;       // file object for context-menu target
+    let _moveParentId = null;      // current folder inside Move dialog
+    let _moveNavHistory = [];      // back-stack for Move dialog navigation
+    let _uploadQueue = [];         // pending upload items
+    let _uploading = false;
+    let _currentSort       = (typeof window.__SORT_PREF    !== 'undefined' ? window.__SORT_PREF    : 'name');
+    let _showDirSize        = typeof window.__SHOW_DIR_SIZE === 'boolean'   ? window.__SHOW_DIR_SIZE : false;
+    let _currentFiles      = [];     // raw file list from server (for re-sorting)
+    let _searchActive       = false;  // true when showing search results
+    let _selectMode = false;         // true when multi-select is active
+    let _selectedIds = new Set();   // set of selected file IDs
 
 // ── bootstrap modal helpers ─────────────────────────────────────────
 const modal = id => bootstrap.Modal.getOrCreateInstance(document.getElementById(id));
@@ -32,11 +32,12 @@ document.addEventListener('DOMContentLoaded', () => {
     setupModalEnter();
     setupSearch();
     setupSort();
+    setupGlobalActionDelegation();
 
     // Keyboard shortcuts for multi-select
     document.addEventListener('keydown', (e) => {
         // Escape exits select mode
-        if (e.key === 'Escape' && selectMode) {
+        if (e.key === 'Escape' && _selectMode) {
             exitSelectMode();
             e.preventDefault();
         }
@@ -52,10 +53,10 @@ document.addEventListener('DOMContentLoaded', () => {
 //  FILE LISTING
 // ════════════════════════════════════════════════════════════════════
 async function loadFiles(parentId) {
-    currentParentId = parentId;
-    searchActive = false;
+    _currentParentId = parentId;
+    _searchActive = false;
     // Exit select mode when navigating
-    if (selectMode) exitSelectMode();
+    if (_selectMode) exitSelectMode();
     show('loadingState'); hide('emptyState'); hide('fileList');
     // Clear search input when navigating
     const searchInput = document.getElementById('searchInput');
@@ -70,8 +71,8 @@ async function loadFiles(parentId) {
     try {
         const data = await apiGet(url);
         renderBreadcrumbs(data.breadcrumbs);
-        currentFiles = data.files;
-        renderFiles(sortFiles(currentFiles));
+        _currentFiles = data.files;
+        renderFiles(sortFiles(_currentFiles));
     } catch (e) {
         console.error(e);
     }
@@ -99,24 +100,27 @@ function renderBreadcrumbs(crumbs) {
 
 function renderFiles(files) {
     const list = document.getElementById('fileList');
+    list.setAttribute('role', 'list');
     list.innerHTML = '';
-    hide('loadingState');
 
     if (!files.length) { show('emptyState'); return; }
+    hide('loadingState');  // Hide spinner now that files are rendered
     hide('emptyState');
 
     files.forEach(f => {
         const row = document.createElement('div');
-        row.className = 'file-row' + (selectedIds.has(f.id) ? ' selected' : '');
+        row.className = 'file-row' + (_selectedIds.has(f.id) ? ' selected' : '');
         row.dataset.id = f.id;
+        row.setAttribute('role', 'listitem');
+        row.setAttribute('aria-label', `${esc(f.name)} — ${f.is_directory ? 'Folder' : humanSize(f.size)}`);
 
         const iconCls = getIconClass(f);
-        const pathHtml = (searchActive && f.path)
+        const pathHtml = (_searchActive && f.path)
             ? `<div class="file-path text-secondary small text-truncate">${esc(f.path)}</div>`
             : '';
 
-        const checkboxHtml = `<div class="select-checkbox ${selectMode ? 'visible' : ''}" data-fid="${f.id}">
-            <i class="fas ${selectedIds.has(f.id) ? 'fa-check-square' : 'fa-square'}"></i>
+        const checkboxHtml = `<div class="select-checkbox ${_selectMode ? 'visible' : ''}" data-fid="${f.id}">
+            <i class="fas ${_selectedIds.has(f.id) ? 'fa-check-square' : 'fa-square'}"></i>
         </div>`;
 
         row.innerHTML = `
@@ -129,7 +133,7 @@ function renderFiles(files) {
             <div class="file-meta">
                 ${f.is_directory ? '' : `<span class="size">${humanSize(f.size)}</span>`}
                 <span class="dir-size" style="
-                    display: ${showDirSize && f.is_directory && (f.recursive_size || 0) > 0
+                    display: ${_showDirSize && f.is_directory && (f.recursive_size || 0) > 0
                         ? 'inline' : 'none'
                     }"
                 >(${humanSize(f.recursive_size)})</span>
@@ -142,7 +146,7 @@ function renderFiles(files) {
             toggleSelect(f.id);
         });
 
-        row.addEventListener('dblclick', () => { if (!selectMode) openFile(f); });
+        row.addEventListener('dblclick', () => { if (!_selectMode) openFile(f); });
         row.addEventListener('click', (e) => {
             // Ctrl+Click or Meta+Click (Cmd on Mac) toggles selection on desktop
             if (e.ctrlKey || e.metaKey) {
@@ -151,15 +155,15 @@ function renderFiles(files) {
                 return;
             }
             // Shift+Click selects a range
-            if (e.shiftKey && selectMode && selectedIds.size > 0) {
+            if (e.shiftKey && _selectMode && _selectedIds.size > 0) {
                 e.preventDefault();
                 rangeSelect(f.id);
                 return;
             }
-            if (selectMode) { toggleSelect(f.id); return; }
+            if (_selectMode) { toggleSelect(f.id); return; }
         });
         row.addEventListener('contextmenu', e => {
-            if (selectMode) { e.preventDefault(); return; }
+            if (_selectMode) { e.preventDefault(); return; }
             showCtx(e, f);
         });
 
@@ -173,7 +177,7 @@ function renderFiles(files) {
             _lpTimer = setTimeout(() => {
                 _lpFired = true;
                 _lpTimer = null;
-                if (selectMode) {
+                if (_selectMode) {
                     toggleSelect(f.id);
                 } else {
                     // Simulate context menu at touch point
@@ -193,7 +197,7 @@ function renderFiles(files) {
         if (isTouchDevice) {
             row.addEventListener('click', (e) => {
                 if (_lpFired) { _lpFired = false; e.preventDefault(); return; }
-                if (selectMode) { toggleSelect(f.id); return; }
+                if (_selectMode) { toggleSelect(f.id); return; }
                 openFile(f);
             });
         }
@@ -244,8 +248,8 @@ function openFile(f) {
     }
     // Text-editable files → editor
     if (isTextEditable(f)) {
-        const fromParam = currentParentId !== null ? `?from=${currentParentId}` : '?from=root';
-        const extraParams = '&sort_by=' + encodeURIComponent(currentSort || 'name');
+        const fromParam = _currentParentId !== null ? `?from=${_currentParentId}` : '?from=root';
+        const extraParams = '&sort_by=' + encodeURIComponent(_currentSort || 'name');
         window.location.href = `/editor/${f.id}${fromParam}${extraParams}`;
         return;
     }
@@ -253,17 +257,17 @@ function openFile(f) {
     const mime = f.mime_type || '';
     const name = (f.name || '').toLowerCase();
     if (mime === 'application/vnd.comicbook+zip' || name.endsWith('.cbz')) {
-        const fromParam = currentParentId !== null ? `?from=${currentParentId}` : '?from=root';
-        const extraParams = '&sort_by=' + encodeURIComponent(currentSort || 'name');
+        const fromParam = _currentParentId !== null ? `?from=${_currentParentId}` : '?from=root';
+        const extraParams = '&sort_by=' + encodeURIComponent(_currentSort || 'name');
         window.location.href = `/cbz/${f.id}${fromParam}${extraParams}`;
         return;
     }
     if (mime.startsWith('video/') || mime.startsWith('audio/') ||
         mime.startsWith('image/') || mime === 'application/pdf') {
-        const fromParam = currentParentId !== null ? `?from=${currentParentId}` : '?from=root';
+        const fromParam = _currentParentId !== null ? `?from=${_currentParentId}` : '?from=root';
         // Pass sort preference and recursion state so player navigation respects explorer settings
         const extraParams = [
-            '&sort_by=' + encodeURIComponent(currentSort || 'name'),
+            '&sort_by=' + encodeURIComponent(_currentSort || 'name'),
             '&recurse=' + (localStorage.getItem('vault_recurse') !== '0' ? 1 : 0)
         ].join('');
         window.location.href = `/player/${f.id}${fromParam}${extraParams}`;
@@ -282,7 +286,7 @@ function uploadFiles(fileList) {
     if (hasRelativePaths) {
         uploadFolder(fileList);
     } else {
-        for (const f of fileList) uploadQueue.push({ file: f, parentId: currentParentId });
+        for (const f of fileList) _uploadQueue.push({ file: f, parentId: _currentParentId });
         document.getElementById('fileInput').value = '';
         processQueue();
     }
@@ -291,7 +295,7 @@ function uploadFiles(fileList) {
 async function uploadFolder(fileList) {
     // Collect unique directory paths and create them first
     const dirCache = {};   // relative path → server folder id
-    const rootParent = currentParentId;
+    const rootParent = _currentParentId;
 
     // Build sorted unique dir paths
     const dirPaths = new Set();
@@ -325,7 +329,7 @@ async function uploadFolder(fileList) {
         const parts = f.webkitRelativePath.split('/');
         const dirPath = parts.slice(0, -1).join('/');
         const parentId = dirPath ? (dirCache[dirPath] || rootParent) : rootParent;
-        uploadQueue.push({ file: f, parentId });
+        _uploadQueue.push({ file: f, parentId });
     }
 
     document.getElementById('folderInput').value = '';
@@ -333,18 +337,18 @@ async function uploadFolder(fileList) {
 }
 
 async function processQueue() {
-    if (uploading || !uploadQueue.length) return;
-    uploading = true;
+    if (_uploading || !_uploadQueue.length) return;
+    _uploading = true;
     show('uploadProgress');
 
-    while (uploadQueue.length) {
-        const item = uploadQueue.shift();
+    while (_uploadQueue.length) {
+        const item = _uploadQueue.shift();
         await uploadOne(item.file, item.parentId);
     }
 
     hide('uploadProgress');
-    uploading = false;
-    loadFiles(currentParentId);
+    _uploading = false;
+    loadFiles(_currentParentId);
 }
 
 function uploadOne(file, parentId) {
@@ -368,12 +372,12 @@ function uploadOne(file, parentId) {
             if (xhr.status !== 200) {
                 try {
                     const err = JSON.parse(xhr.responseText);
-                    alert('Upload failed: ' + (err.error || 'unknown error'));
-                } catch { alert('Upload failed'); }
+                    App.showToast('Upload failed: ' + (err.error || 'unknown error'), 'error');
+                } catch { App.showToast('Upload failed', 'error'); }
             }
             resolve();
         };
-        xhr.onerror = () => { alert('Upload network error'); resolve(); };
+        xhr.onerror = () => { App.showToast('Upload network error', 'error'); resolve(); };
         xhr.send(fd);
     });
 }
@@ -424,7 +428,7 @@ async function handleDropItems(items) {
             const f = items[i].getAsFile();
             if (f) files.push(f);
         }
-        for (const f of files) uploadQueue.push({ file: f, parentId: currentParentId });
+        for (const f of files) _uploadQueue.push({ file: f, parentId: _currentParentId });
         processQueue();
         return;
     }
@@ -465,7 +469,7 @@ async function handleDropItems(items) {
 
     // Create directories on server, then queue files
     const dirCache = {};
-    const rootParent = currentParentId;
+    const rootParent = _currentParentId;
 
     const dirPaths = new Set();
     for (const { path } of collected) {
@@ -491,7 +495,7 @@ async function handleDropItems(items) {
 
     for (const { file, path } of collected) {
         const parentId = path ? (dirCache[path] || rootParent) : rootParent;
-        uploadQueue.push({ file, parentId });
+        _uploadQueue.push({ file, parentId });
     }
     processQueue();
 }
@@ -519,7 +523,7 @@ function setupContextMenu() {
 function showCtx(e, file) {
     e.preventDefault();
     e.stopPropagation();
-    contextFile = file;
+    _contextFile = file;
 
     // Show/hide Edit option based on whether file is text-editable
     const editItem = document.getElementById('ctxEdit');
@@ -559,9 +563,9 @@ function hideCtx() {
     document.getElementById('contextMenu').style.display = 'none';
 }
 
-function handleCtxAction(action) {
-    if (!contextFile) return;
-    const f = contextFile;
+async function handleCtxAction(action) {
+    if (!_contextFile) return;
+    const f = _contextFile;
 
     switch (action) {
         case 'open':
@@ -589,8 +593,8 @@ function handleCtxAction(action) {
             }, 200);
             break;
         case 'move':
-            moveNavHistory = [];
-            loadMoveFolders(currentParentId);
+            _moveNavHistory = [];
+            loadMoveFolders(_currentParentId);
             modal('moveModal').show();
             break;
         case 'delete':
@@ -598,14 +602,14 @@ function handleCtxAction(action) {
             modal('deleteModal').show();
             break;
         case 'reencode':
-            if (confirm('Re-encode "' + f.name + '" to H.264 + AAC for browser playback?\n\nThis will permanently replace the original file. This may take a long time for large files.')) {
-                reencodeFile(f);
-            }
+            const ok1 = await App.confirmDialog('Re-encode Video', 'Re-encode "' + f.name + '" to H.264 + AAC for browser playback?\n\nThis will permanently replace the original file.');
+            if (!ok1) break;
+            reencodeFile(f);
             break;
         case 'reencode-dir':
-            if (confirm('Re-encode ALL video files in "' + f.name + '" to H.264 + AAC?\n\nThis processes files one at a time and may take a very long time.')) {
-                reencodeDir(f);
-            }
+            const ok2 = await App.confirmDialog('Re-encode Directory', 'Re-encode ALL video files in "' + f.name + '" to H.264 + AAC?\n\nThis processes files one at a time.');
+            if (!ok2) break;
+            reencodeDir(f);
             break;
         case 'clear-audio-cache':
             clearAudioCache(f);
@@ -650,11 +654,11 @@ async function clearAudioCache(f) {
         });
         const data = await resp.json();
         if (data.success) {
-            alert('Cleared ' + (data.cleared || 0) + ' cached audio track(s).');
+            App.showToast('Cleared ' + (data.cleared || 0) + ' cached audio track(s).', 'success');
         } else {
-            alert('Error: ' + (data.error || 'Unknown'));
+            App.showToast('Error: ' + (data.error || 'Unknown'), 'error');
         }
-    } catch (e) { alert('Request failed: ' + e.message); }
+    } catch (e) { App.showToast('Request failed: ' + e.message, 'error'); }
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -676,61 +680,63 @@ async function createTextFile() {
     const name = document.getElementById('newFileNameInput').value.trim();
     if (!name) return;
     try {
-        const data = await apiPost('/api/create-text', { name, parent_id: currentParentId });
+        const data = await apiPost('/api/create-text', { name, parent_id: _currentParentId });
         modal('newFileModal').hide();
         // Open directly in editor
         window.location.href = `/editor/${data.id}`;
-    } catch (e) { alert(e.message); }
+    } catch (e) { App.showToast(e.message, 'error'); }
 }
 
 async function createFolder() {
     const name = document.getElementById('folderNameInput').value.trim();
-    if (!name) return;
+    const err = Validators.folderName(name);
+    if (err) { App.showToast(err, 'warning'); return; }
     try {
-        await apiPost('/api/mkdir', { name, parent_id: currentParentId });
+        await apiPost('/api/mkdir', { name, parent_id: _currentParentId });
         modal('newFolderModal').hide();
-        loadFiles(currentParentId);
-    } catch (e) { alert(e.message); }
+        loadFiles(_currentParentId);
+    } catch (e) { App.showToast(e.message, 'error'); }
 }
 
 // ════════════════════════════════════════════════════════════════════
 //  RENAME
 // ════════════════════════════════════════════════════════════════════
 async function doRename() {
-    if (!contextFile) return;
+    if (!_contextFile) return;
     const name = document.getElementById('renameInput').value.trim();
-    if (!name) return;
+    const err = Validators.folderName(name);
+    if (err) { App.showToast(err, 'warning'); return; }
     try {
-        await apiPost('/api/rename', { id: contextFile.id, name });
+        await apiPost('/api/rename', { id: _contextFile.id, name });
         modal('renameModal').hide();
-        loadFiles(currentParentId);
-    } catch (e) { alert(e.message); }
+        loadFiles(_currentParentId);
+    } catch (e) { App.showToast(e.message, 'error'); }
 }
 
 // ════════════════════════════════════════════════════════════════════
 //  DELETE
 // ════════════════════════════════════════════════════════════════════
 async function doDelete() {
-    if (!contextFile) return;
+    if (!_contextFile) return;
     try {
-        await apiPost('/api/delete', { id: contextFile.id });
+        await apiPost('/api/delete', { id: _contextFile.id });
         modal('deleteModal').hide();
-        loadFiles(currentParentId);
-    } catch (e) { alert(e.message); }
+        loadFiles(_currentParentId);
+    } catch (e) { App.showToast(e.message, 'error'); }
 }
 
 // ════════════════════════════════════════════════════════════════════
 //  MULTI-SELECT
 // ════════════════════════════════════════════════════════════════════
 function enterSelectMode() {
-    selectMode = true;
+    _selectMode = true;
     document.querySelectorAll('.select-checkbox').forEach(el => el.classList.add('visible'));
     updateBulkBar();
 }
 
 function exitSelectMode() {
-    selectMode = false;
-    selectedIds.clear();
+    _selectMode = false;
+    _selectedIds.clear();
     document.querySelectorAll('.select-checkbox').forEach(el => el.classList.remove('visible'));
     document.querySelectorAll('.file-row.selected').forEach(el => el.classList.remove('selected'));
     // Update checkbox icons
@@ -741,20 +747,20 @@ function exitSelectMode() {
 }
 
 function toggleSelect(fileId) {
-    if (!selectMode) enterSelectMode();
-    if (selectedIds.has(fileId)) {
-        selectedIds.delete(fileId);
+    if (!_selectMode) enterSelectMode();
+    if (_selectedIds.has(fileId)) {
+        _selectedIds.delete(fileId);
     } else {
-        selectedIds.add(fileId);
+        _selectedIds.add(fileId);
     }
     // Update visual
     const row = document.querySelector(`.file-row[data-id="${fileId}"]`);
     if (row) {
-        row.classList.toggle('selected', selectedIds.has(fileId));
+        row.classList.toggle('selected', _selectedIds.has(fileId));
         const icon = row.querySelector('.select-checkbox i');
-        if (icon) icon.className = selectedIds.has(fileId) ? 'fas fa-check-square' : 'fas fa-square';
+        if (icon) icon.className = _selectedIds.has(fileId) ? 'fas fa-check-square' : 'fas fa-square';
     }
-    if (selectedIds.size === 0) {
+    if (_selectedIds.size === 0) {
         exitSelectMode();
     } else {
         updateBulkBar();
@@ -769,7 +775,7 @@ function rangeSelect(targetId) {
     // Find boundaries: last selected item and the target
     let lastIdx = -1;
     for (let i = rows.length - 1; i >= 0; i--) {
-        if (selectedIds.has(rowIds[i]) && rowIds[i] !== targetId) {
+        if (_selectedIds.has(rowIds[i]) && rowIds[i] !== targetId) {
             lastIdx = i;
             break;
         }
@@ -784,7 +790,7 @@ function rangeSelect(targetId) {
     const end = Math.max(lastIdx, targetIdx);
     for (let i = start; i <= end; i++) {
         const fid = rowIds[i];
-        selectedIds.add(fid);
+        _selectedIds.add(fid);
         rows[i].classList.add('selected');
         const icon = rows[i].querySelector('.select-checkbox i');
         if (icon) icon.className = 'fas fa-check-square';
@@ -793,8 +799,8 @@ function rangeSelect(targetId) {
 }
 
 function selectAll() {
-    if (!selectMode) enterSelectMode();
-    currentFiles.forEach(f => selectedIds.add(f.id));
+    if (!_selectMode) enterSelectMode();
+    _currentFiles.forEach(f => _selectedIds.add(f.id));
     document.querySelectorAll('.file-row').forEach(row => {
         row.classList.add('selected');
         const icon = row.querySelector('.select-checkbox i');
@@ -806,37 +812,38 @@ function selectAll() {
 function updateBulkBar() {
     const bar = document.getElementById('bulkActionBar');
     if (!bar) return;
-    if (selectMode && selectedIds.size > 0) {
+    if (_selectMode && _selectedIds.size > 0) {
         bar.style.display = '';
-        document.getElementById('bulkCount').textContent = `${selectedIds.size} selected`;
+        document.getElementById('bulkCount').textContent = `${_selectedIds.size} selected`;
     } else {
         bar.style.display = 'none';
     }
 }
 
 async function bulkDelete() {
-    if (!selectedIds.size) return;
-    const count = selectedIds.size;
-    if (!confirm(`Delete ${count} item${count > 1 ? 's' : ''}? This cannot be undone.`)) return;
+    if (!_selectedIds.size) { App.showToast('No items selected', 'info'); return; }
+    const count = _selectedIds.size;
+    const ok3 = await App.confirmDialog('Delete Items', `Delete ${count} item${count > 1 ? 's' : ''}?\nThis cannot be undone.`);
+        if (!ok3) return;
     try {
-        await apiPost('/api/bulk-delete', { ids: [...selectedIds] });
+        await apiPost('/api/bulk-delete', { ids: [..._selectedIds] });
         exitSelectMode();
-        loadFiles(currentParentId);
-    } catch (e) { alert(e.message); }
+        loadFiles(_currentParentId);
+    } catch (e) { App.showToast(e.message, 'error'); }
 }
 
-let bulkMoveParentId = null;
-let bulkMoveNavHistory = [];
+    let _bulkMoveParentId = null;
+    let _bulkMoveNavHistory = [];
 
 function showBulkMoveModal() {
-    if (!selectedIds.size) return;
+    if (!_selectedIds.size) return;
     bulkMoveNavHistory = [];
-    loadBulkMoveFolders(currentParentId);
+    loadBulkMoveFolders(_currentParentId);
     modal('bulkMoveModal').show();
 }
 
 async function loadBulkMoveFolders(parentId) {
-    bulkMoveParentId = parentId;
+    _bulkMoveParentId = parentId;
     const url = parentId !== null
         ? `/api/folders?parent_id=${parentId}`
         : '/api/folders';
@@ -946,30 +953,30 @@ async function loadBulkMoveFolders(parentId) {
 
     data.folders.forEach(f => {
         // don't show folders that are being moved
-        if (selectedIds.has(f.id)) return;
+        if (_selectedIds.has(f.id)) return;
         const item = document.createElement('div');
         item.className = 'move-folder-item';
         item.innerHTML = `<i class="fas fa-folder fa-fw" style="color:#e3b341"></i> ${esc(f.name)}`;
-        item.onclick = () => { bulkMoveNavHistory.push(bulkMoveParentId); loadBulkMoveFolders(f.id); };
+        item.onclick = () => { bulkMoveNavHistory.push(_bulkMoveParentId); loadBulkMoveFolders(f.id); };
         list.appendChild(item);
     });
 }
 
 async function doBulkMove() {
-    if (!selectedIds.size) return;
+    if (!_selectedIds.size) return;
     try {
-        await apiPost('/api/bulk-move', { ids: [...selectedIds], parent_id: bulkMoveParentId });
+        await apiPost('/api/bulk-move', { ids: [..._selectedIds], parent_id: _bulkMoveParentId });
         modal('bulkMoveModal').hide();
         exitSelectMode();
-        loadFiles(currentParentId);
-    } catch (e) { alert(e.message); }
+        loadFiles(_currentParentId);
+    } catch (e) { App.showToast(e.message, 'error'); }
 }
 
 // ════════════════════════════════════════════════════════════════════
 //  MOVE
 // ════════════════════════════════════════════════════════════════════
 async function loadMoveFolders(parentId) {
-    moveParentId = parentId;
+    _moveParentId = parentId;
     const url = parentId !== null
         ? `/api/folders?parent_id=${parentId}`
         : '/api/folders';
@@ -1042,12 +1049,12 @@ async function loadMoveFolders(parentId) {
     navButtons.style.flexWrap = 'wrap';
     
     // Back button - always show if there's history
-    if (moveNavHistory && moveNavHistory.length > 0) {
+    if (_moveNavHistory && _moveNavHistory.length > 0) {
         const back = document.createElement('button');
         back.className = 'btn btn-sm btn-outline-secondary';
         back.innerHTML = '<i class="fas fa-arrow-left fa-fw"></i> Back';
         back.style.cursor = 'pointer';
-        back.onclick = () => loadMoveFolders(moveNavHistory.pop() ?? null);
+        back.onclick = () => loadMoveFolders(_moveNavHistory.pop() ?? null);
         navButtons.appendChild(back);
     }
 
@@ -1060,7 +1067,7 @@ async function loadMoveFolders(parentId) {
         up.onclick = async () => {
             try {
                 const parentInfo = await apiGet(`/api/folder/${parentId}/parent`);
-                moveNavHistory.push(parentId);
+                _moveNavHistory.push(parentId);
                 loadMoveFolders(parentInfo.parent_id);
             } catch (e) {
                 console.warn('Could not navigate up:', e);
@@ -1079,22 +1086,22 @@ async function loadMoveFolders(parentId) {
 
     data.folders.forEach(f => {
         // don't show the file being moved (if it's a folder)
-        if (contextFile && f.id === contextFile.id) return;
+        if (_contextFile && f.id === _contextFile.id) return;
         const item = document.createElement('div');
         item.className = 'move-folder-item';
         item.innerHTML = `<i class="fas fa-folder fa-fw" style="color:#e3b341"></i> ${esc(f.name)}`;
-        item.onclick = () => { moveNavHistory.push(moveParentId); loadMoveFolders(f.id); };
+        item.onclick = () => { _moveNavHistory.push(_moveParentId); loadMoveFolders(f.id); };
         list.appendChild(item);
     });
 }
 
 async function doMove() {
-    if (!contextFile) return;
+    if (!_contextFile) return;
     try {
-        await apiPost('/api/move', { id: contextFile.id, parent_id: moveParentId });
+        await apiPost('/api/move', { id: _contextFile.id, parent_id: _moveParentId });
         modal('moveModal').hide();
-        loadFiles(currentParentId);
-    } catch (e) { alert(e.message); }
+        loadFiles(_currentParentId);
+    } catch (e) { App.showToast(e.message, 'error'); }
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -1113,9 +1120,9 @@ function setupSearch() {
         clearTimeout(_searchTimer);
         if (!q) {
             // Restore normal file listing
-            if (searchActive) {
-                searchActive = false;
-                loadFiles(currentParentId);
+            if (_searchActive) {
+                _searchActive = false;
+                loadFiles(_currentParentId);
             }
             return;
         }
@@ -1126,9 +1133,9 @@ function setupSearch() {
         if (e.key === 'Escape') {
             input.value = '';
             clearBtn.classList.add('d-none');
-            if (searchActive) {
-                searchActive = false;
-                loadFiles(currentParentId);
+            if (_searchActive) {
+                _searchActive = false;
+                loadFiles(_currentParentId);
             }
         }
     });
@@ -1136,9 +1143,9 @@ function setupSearch() {
     clearBtn.addEventListener('click', () => {
         input.value = '';
         clearBtn.classList.add('d-none');
-        if (searchActive) {
-            searchActive = false;
-            loadFiles(currentParentId);
+        if (_searchActive) {
+            _searchActive = false;
+            loadFiles(_currentParentId);
         }
         input.focus();
     });
@@ -1147,9 +1154,9 @@ function setupSearch() {
 async function doSearch(query) {
     show('loadingState'); hide('emptyState'); hide('fileList');
     try {
-        const data = await apiGet(`/api/search?q=${encodeURIComponent(query)}&parent_id=${encodeURIComponent(currentParentId)}`);
-        searchActive = true;
-        currentFiles = data.files;
+        const data = await apiGet(`/api/search?q=${encodeURIComponent(query)}&parent_id=${encodeURIComponent(_currentParentId)}`);
+        _searchActive = true;
+        _currentFiles = data.files;
 
         // Show search breadcrumb
         const el = document.getElementById('breadcrumbs');
@@ -1159,7 +1166,7 @@ async function doSearch(query) {
         span.textContent = `Search: "${query}" (${data.files.length} result${data.files.length !== 1 ? 's' : ''})`;
         el.appendChild(span);
 
-        renderFiles(sortFiles(currentFiles));
+        renderFiles(sortFiles(_currentFiles));
     } catch (e) {
         console.error('Search error:', e);
     }
@@ -1175,11 +1182,11 @@ function setupSort() {
     if (!menu) return;
 
     // Apply persisted sort on load
-    if (currentSort !== 'name') {
+    if (_currentSort !== 'name') {
         menu.querySelectorAll('.dropdown-item').forEach(el =>
-            el.classList.toggle('active', el.dataset.sort === currentSort));
+            el.classList.toggle('active', el.dataset.sort === _currentSort));
         const label = document.getElementById('sortLabel');
-        if (label) label.textContent = SORT_LABELS[currentSort] || currentSort;
+        if (label) label.textContent = SORT_LABELS[_currentSort] || _currentSort;
     }
 
     menu.addEventListener('click', e => {
@@ -1187,29 +1194,29 @@ function setupSort() {
         const link = e.target.closest('[data-sort]');
         if (!link) return;
 
-        currentSort = link.dataset.sort;
+        _currentSort = link.dataset.sort;
         // Persist sort preference to server
         fetch('/api/preferences', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'same-origin',
-            body: JSON.stringify({ sort_preference: currentSort }),
+            body: JSON.stringify({ sort_preference: _currentSort }),
         }).catch(() => { });
         // Update active class
         menu.querySelectorAll('.dropdown-item').forEach(el =>
-            el.classList.toggle('active', el.dataset.sort === currentSort));
+            el.classList.toggle('active', el.dataset.sort === _currentSort));
         // Update label
         const label = document.getElementById('sortLabel');
-        if (label) label.textContent = SORT_LABELS[currentSort] || currentSort;
+        if (label) label.textContent = SORT_LABELS[_currentSort] || _currentSort;
 
         // Re-render with new sort
-        renderFiles(sortFiles(currentFiles));
+        renderFiles(sortFiles(_currentFiles));
     });
 }
 
 function sortFiles(files) {
     const sorted = [...files];
-    switch (currentSort) {
+    switch (_currentSort) {
         case 'name':
             sorted.sort((a, b) => {
                 // Directories first, then alphabetical
@@ -1261,29 +1268,58 @@ function setupModalEnter() {
     if (newFileInput) newFileInput.addEventListener('keydown', e => { if (e.key === 'Enter') createTextFile(); });
 }
 
-// ════════════════════════════════════════════════════════════════════
-//  API HELPERS
-// ════════════════════════════════════════════════════════════════════
-async function apiGet(url) {
-    const r = await fetch(url);
-    if (!r.ok) throw new Error(await r.text());
-    return r.json();
-}
-
-async function apiPost(url, body) {
-    const r = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-    });
-    const data = await r.json();
-    if (!r.ok) throw new Error(data.error || 'Request failed');
-    return data;
-}
-
-// ════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════=
 //  UTILITIES
+// ═══════════════════════════════════════════════════════════════════=
+//  Global action delegation — replaces onclick attributes in templates
 // ════════════════════════════════════════════════════════════════════
+function setupGlobalActionDelegation() {
+    document.addEventListener('click', e => {
+        const btn = e.target.closest('[data-action]');
+        if (!btn) return;
+        
+        switch (btn.dataset.action) {
+            // Explorer actions
+            case 'new-folder':          App.showNewFolderModal(); break;
+            case 'create-folder':       App.createFolder(); break;
+            case 'create-text-file':    App.createTextFile(); break;
+            case 'do-rename':           App.doRename(); break;
+            case 'do-move':             App.doMove(); break;
+            case 'delete-selected':     App.bulkDelete(); break;
+            case 'bulk-delete':         App.bulkDelete(); break;
+            case 'select-all':          App.selectAll(); break;
+            case 'exit-select-mode':    App.exitSelectMode(); break;
+            
+            // Selection actions
+            case 'enter-select-mode':   App.enterSelectMode(); break;
+            case 'show-bulk-move-modal':App.showBulkMoveModal(); break;
+            case 'do-bulk-move':        App.doBulkMove(); break;
+            
+            // Queue / reencode
+            case 'open-queue-panel':    App.openQueuePanel(); break;
+            case 'clear-finished-jobs': App.clearFinishedJobs(); break;
+            
+            default: console.warn('Unknown action:', btn.dataset.action);
+        }
+    });
+
+    // Handle [data-toggle] buttons (upload files / folder)
+    document.addEventListener('click', e => {
+        const btn = e.target.closest('[data-toggle]');
+        if (!btn) return;
+
+        switch (btn.dataset.toggle) {
+            case 'upload-files':
+                document.getElementById('fileInput').click(); break;
+            case 'upload-folder':
+                document.getElementById('folderInput').click(); break;
+            default:
+                console.warn('Unknown toggle:', btn.dataset.toggle);
+        }
+    });
+}
+
+// ════════════════════════════════════════════════════════════════════  
 function show(id) { document.getElementById(id).style.display = ''; }
 function hide(id) { document.getElementById(id).style.display = 'none'; }
 
@@ -1303,7 +1339,8 @@ function humanSize(bytes) {
 
 function relTime(iso) {
     if (!iso) return '';
-    const d = new Date(iso + 'Z');  // assume UTC from SQLite
+    try { var d = new Date(iso); } catch { return iso; }
+    if (isNaN(d.getTime())) return iso;
     const now = new Date();
     const diff = (now - d) / 1000;
     if (diff < 60) return 'just now';
@@ -1331,7 +1368,7 @@ function getIconClass(f) {
 // ════════════════════════════════════════════════════════════════════
 function showToast(message, type = 'info', duration = 6000) {
     const container = document.getElementById('toastContainer');
-    if (!container) { alert(message); return; }
+    if (!container) { console.warn('[Toast]', message); return; }
 
     const colors = {
         info: { bg: '#1e3a5f', border: '#3b82f6', icon: 'fa-info-circle', iconColor: '#60a5fa' },
@@ -1523,13 +1560,38 @@ async function clearFinishedJobs() {
     }
 }
 
-function updateQueueBadge(activeCount) {
-    const badge = document.getElementById('queueBadge');
-    if (!badge) return;
-    if (activeCount > 0) {
-        badge.textContent = activeCount;
-        badge.style.display = '';
-    } else {
-        badge.style.display = 'none';
-    }
-}
+// ════════════════════════════════════════════════════════════════════
+//  PUBLIC API — exposed via window.App for template onclicks
+// Each group is a named object; functions also available as App.functionName()
+// ════════════════════════════════════════════════════════════════════
+    const FileManager = {
+        loadFiles, renderBreadcrumbs, renderFiles,
+        openFile, sortFiles, setupSearch, doSearch, setupSort
+    };
+
+    const UploadManager = { uploadFiles, processQueue, handleDropItems };
+    const SelectionManager = {
+        enterSelectMode, exitSelectMode, toggleSelect, rangeSelect, selectAll,
+        updateBulkBar, bulkDelete, showBulkMoveModal, doBulkMove
+    };
+
+    const DialogManager = {
+        showNewFolderModal, createTextFile, createFolder,
+        showCtx, hideCtx, handleCtxAction,
+        loadMoveFolders, doMove
+    };
+
+    const ReencodeManager = { reencodeFile, reencodeDir, clearAudioCache };
+    const QueueManager  = { openQueuePanel, refreshQueuePanel, startReencodePoller, pollReencodeStatus, clearFinishedJobs };
+
+    window.App = Object.assign(window.App || {},
+        FileManager,
+        UploadManager,
+        SelectionManager,
+        DialogManager,
+        ReencodeManager,
+        QueueManager,
+        // Utilities (also available as App.esc(), etc.)
+        { show, hide, esc, humanSize, relTime, getIconClass }
+    );
+})();
