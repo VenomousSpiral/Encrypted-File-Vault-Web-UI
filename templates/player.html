@@ -291,6 +291,8 @@
 <script src="{{ url_for('static', filename='lib/hlsjs/hls.min.js') }}"></script>
 <script>window.__PLAYER_CONFIG = { fileId: {{ file.id }}, mime: '{{ file.mime_type }}', position: {{ vprefs.position|default(0, true) }}, sub_offset: {{ vprefs.sub_offset|default(0, true) }} };</script>
 <script src="{{ url_for('static', filename='js/player.js') }}"></script>
+<!-- Shared navigation (prev/next/shuffle/recurse for all file types) -->
+<script src="{{ url_for('static', filename='js/file-nav.js') }}"></script>
 
 {% elif mime.startswith('audio/') %}
 <!-- Full-screen audio player -->
@@ -358,6 +360,8 @@
 
 <script>window.__PLAYER_CONFIG = { fileId: {{ file.id }}, mime: '{{ file.mime_type }}' };</script>
 <script src="{{ url_for('static', filename='js/audio-player.js') }}"></script>
+<!-- Shared navigation (prev/next/shuffle/recurse for all file types) -->
+<script src="{{ url_for('static', filename='js/file-nav.js') }}"></script>
 
 {% elif mime.startswith('image/') %}
 <div id="viewerContainer" style="height:calc(100vh - 56px);display:flex;align-items:center;justify-content:center;background:#0d1117">
