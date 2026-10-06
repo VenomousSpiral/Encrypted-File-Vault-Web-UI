@@ -236,6 +236,14 @@
 </div>
 
 {% if mime.startswith('video/') %}
+<!-- Shared file navigation styles for prev/next/shuffle/recurse buttons -->
+<style>
+    .shuffle-btn.active, .recurse-btn.active {
+        background: var(--v-accent, #58a6ff) !important;
+        color: #000 !important;
+        border-color: var(--v-accent, #58a6ff) !important;
+    }
+</style>
 <!-- HLS Video Player (on-demand, Jellyfin-style) -->
 <div id="hlsContainer" class="flex-grow-1 position-relative bg-black d-flex flex-column">
     <div id="hlsLoading" class="position-absolute top-0 start-0 w-100 h-100 d-flex flex-column align-items-center justify-content-center" style="z-index:10;background:#000">
@@ -356,12 +364,15 @@
     <img src="{{ url_for('stream_file', file_id=file.id) }}"
          class="img-fluid" style="max-height:calc(100% - 2rem);max-width:100%;object-fit:contain;display:block;margin:auto;" alt="{{ file.name }}">
 </div>
-
+<script>window.__PLAYER_CONFIG = { fileId: {{ file.id }}, mime: '{{ file.mime_type }}' };</script>
+<script src="{{ url_for('static', filename='js/file-nav.js') }}"></script>
 {% elif mime == 'application/pdf' %}
 <div id="viewerContainer" style="height:calc(100vh - 56px);display:flex;align-items:center;justify-content:center;background:#0d1117;padding:8px">
     <iframe src="{{ url_for('stream_file', file_id=file.id) }}"
             class="w-100 h-100 border-0" style="border-radius:4px"></iframe>
 </div>
+<script>window.__PLAYER_CONFIG = { fileId: {{ file.id }}, mime: '{{ file.mime_type }}' };</script>
+<script src="{{ url_for('static', filename='js/file-nav.js') }}"></script>
 
 {% elif mime.startswith('text/') %}
 <div id="viewerContainer" style="height:calc(100vh - 56px);display:flex;align-items:center;justify-content:center;background:#0d1117">
@@ -370,6 +381,8 @@
     <p class="text-secondary">This file can be edited in the text editor.</p>
     <a href="{{ url_for('editor', file_id=file.id) }}" class="btn btn-primary mt-2"><i class="fas fa-file-pen me-2"></i>Open in Editor</a>
 </div>
+<script>window.__PLAYER_CONFIG = { fileId: {{ file.id }}, mime: '{{ file.mime_type }}' };</script>
+<script src="{{ url_for('static', filename='js/file-nav.js') }}"></script>
 
 {% else %}
 <div id="viewerContainer" style="height:calc(100vh - 56px);display:flex;align-items:center;justify-content:center;background:#0d1117">
@@ -378,6 +391,8 @@
     <p class="text-secondary">No preview available for this file type.</p>
     <a href="{{ url_for('download_file', file_id=file.id) }}" class="btn btn-primary mt-2"><i class="fas fa-download me-2"></i>Download</a>
 </div>
+<script>window.__PLAYER_CONFIG = { fileId: {{ file.id }}, mime: '{{ file.mime_type }}' };</script>
+<script src="{{ url_for('static', filename='js/file-nav.js') }}"></script>
 {% endif %}
 
 <script>window.__PLAYER_CONFIG = { fileId: {{ file.id }}, mime: '{{ file.mime_type }}' };
