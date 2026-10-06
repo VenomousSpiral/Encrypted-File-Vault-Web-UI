@@ -18,7 +18,19 @@
     let _selectMode = false;         // true when multi-select is active
     let _selectedIds = new Set();   // set of selected file IDs
 
-// ── bootstrap modal helpers ─────────────────────────────────────────
+// ── validators ───────────────────────────────────────────────────
+const Validators = {
+    folderName(name) {
+        if (!name || !name.trim()) return 'Name is required.';
+        if (/[\\/:*?"<>|]/.test(name)) return 'Name contains invalid character: / \\ : * ? " < > |';
+        // Reject names that are just dots or spaces
+        const trimmed = name.replace(/[\s\.]+$/g, '');
+        if (!trimmed) return 'Name cannot be only whitespace/dots.';
+        return null;
+    }
+};
+
+// ── bootstrap modal helpers
 const modal = id => bootstrap.Modal.getOrCreateInstance(document.getElementById(id));
 
 // ── init ────────────────────────────────────────────────────────────
@@ -103,8 +115,8 @@ function renderFiles(files) {
     list.setAttribute('role', 'list');
     list.innerHTML = '';
 
+    hide('loadingState');
     if (!files.length) { show('emptyState'); return; }
-    hide('loadingState');  // Hide spinner now that files are rendered
     hide('emptyState');
 
     files.forEach(f => {
@@ -268,6 +280,7 @@ function openFile(f) {
         // Pass sort preference and recursion state so player navigation respects explorer settings
         const extraParams = [
             '&sort_by=' + encodeURIComponent(_currentSort || 'name'),
+            '&shuffle=' + (localStorage.getItem('vault_shuffle') === '1' ? 1 : 0),
             '&recurse=' + (localStorage.getItem('vault_recurse') !== '0' ? 1 : 0)
         ].join('');
         window.location.href = `/player/${f.id}${fromParam}${extraParams}`;
@@ -1279,17 +1292,21 @@ function setupGlobalActionDelegation() {
         if (!btn) return;
         
         switch (btn.dataset.action) {
-            // Explorer actions
+            // Explorer toolbar buttons (open modals)
             case 'new-folder':          App.showNewFolderModal(); break;
-            case 'create-folder':       App.createFolder(); break;
-            case 'create-text-file':    App.createTextFile(); break;
+            case 'new-file':            App.showNewFileModal(); break;
             case 'do-rename':           App.doRename(); break;
             case 'do-move':             App.doMove(); break;
+            case 'do-delete':           App.doDelete(); break;
             case 'delete-selected':     App.bulkDelete(); break;
             case 'bulk-delete':         App.bulkDelete(); break;
             case 'select-all':          App.selectAll(); break;
             case 'exit-select-mode':    App.exitSelectMode(); break;
             
+            // Folder/file creation (inside modals)
+            case 'create-folder':       App.createFolder(); break;
+            case 'create-text-file':    App.createTextFile(); break;
+
             // Selection actions
             case 'enter-select-mode':   App.enterSelectMode(); break;
             case 'show-bulk-move-modal':App.showBulkMoveModal(); break;
@@ -1576,7 +1593,7 @@ async function clearFinishedJobs() {
     };
 
     const DialogManager = {
-        showNewFolderModal, createTextFile, createFolder,
+        showNewFolderModal, showNewFileModal, createTextFile, createFolder,
         showCtx, hideCtx, handleCtxAction,
         loadMoveFolders, doMove
     };
@@ -1592,6 +1609,8 @@ async function clearFinishedJobs() {
         ReencodeManager,
         QueueManager,
         // Utilities (also available as App.esc(), etc.)
-        { show, hide, esc, humanSize, relTime, getIconClass }
+        { show, hide, esc, humanSize, relTime, getIconClass },
+        // Modal actions used by data-action delegation
+        { doRename, doDelete, createFolder, showNewFolderModal, createTextFile }
     );
 })();

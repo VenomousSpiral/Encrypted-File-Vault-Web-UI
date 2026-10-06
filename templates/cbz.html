@@ -133,6 +133,6 @@
 {% endblock %}
 
 {% block scripts %}
-    <script>window.__CBZ_CONFIG = { fileId: {{ file.id }} };</script>
+    <script>window.__CBZ_CONFIG = { fileId: {{ file.id }}, initialPage: {{ cbz_prefs.get('page', 0) }} };</script>
     <script src="{{ url_for('static', filename='js/cbz.js') }}"></script>
 {% endblock %}

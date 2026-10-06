@@ -3,192 +3,381 @@
 
 {% block head %}
 <style>
-.nav-btn { min-width: 32px; }
-    .shuffle-btn.active { color: #fff; background-color: var(--bs-primary); border-color: var(--bs-primary); }
-    .recurse-btn.active { color: #fff; background-color: var(--bs-success); border-color: var(--bs-success); }
-    .nav-pos { font-size: .7rem; color: #8b949e; white-space: nowrap; }
+/* ── Audio player full-screen layout ─────────────────────── */
+.audio-full-page {
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    background: linear-gradient(180deg, #0d1117 0%, #161b22 50%, #0d1117 100%);
+}
+
+/* Visualizer area - takes up most of the screen */
+.audio-visual-area {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+}
+.equalizer-container {
+    display: flex;
+    align-items: flex-end;
+    gap: 3px;
+    height: min(200px, 40vh);
+    padding: 0 1rem;
+}
+.eq-bar {
+    width: 8px;
+    border-radius: 4px;
+    background: var(--v-accent, #58a6ff);
+    transition: height .2s ease, opacity .2s ease;
+    animation: eqPulse 1.3s ease-in-out infinite alternate;
+}
+.eq-bar:nth-child(odd) { animation-delay: -0.4s; }
+.eq-bar:nth-child(3n) { animation-delay: -0.8s; }
+.eq-bar:nth-child(5n) { animation-delay: -1.2s; }
+.audio-visual-area.paused .eq-bar {
+    animation-play-state: paused;
+}
+@keyframes eqPulse {
+    0%   { height: 6px; opacity: 0.3; }
+    50%  { height: calc(min(200px, 40vh) * 0.4); opacity: 0.7; }
+    100% { height: calc(min(200px, 40vh)); opacity: 1; }
+}
+
+/* Info area (title + progress) */
+.audio-info-area {
+    padding: 1rem 1.5rem 0.5rem;
+    text-align: center;
+}
+.audio-title {
+    font-size: clamp(1.2rem, 4vw, 1.8rem);
+    font-weight: 700;
+    color: var(--v-text, #e6edf3);
+    margin-bottom: .25rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.audio-meta {
+    font-size: clamp(.85rem, 2.5vw, 1rem);
+    color: var(--v-muted, #8b949e);
+    margin-bottom: .75rem;
+}
+
+/* Progress bar */
+.audio-progress-wrap {
+    padding: 0 1.5rem;
+    margin-bottom: .75rem;
+}
+.audio-time-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: clamp(.65rem, 2vw, .8rem);
+    color: var(--v-muted, #8b949e);
+    margin-bottom: .35rem;
+    font-variant-numeric: tabular-nums;
+}
+.audio-progress-bar {
+    height: 6px;
+    background: rgba(255,255,255,.12);
+    border-radius: 3px;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+    transition: height .1s;
+}
+.audio-progress-fill {
+    height: 100%;
+    background: var(--v-accent, #58a6ff);
+    border-radius: 3px;
+    width: 0%;
+    transition: width .2s linear;
+}
+.audio-progress-bar:hover { height: 8px; margin-top: -1px; }
+
+/* Controls area */
+.audio-controls-area {
+    padding: .5rem 1.5rem 1rem;
+}
+
+/* Main controls row (prev, play, next) */
+.audio-main-controls {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: clamp(.75rem, 3vw, 2rem);
+    margin-bottom: .75rem;
+}
+.ctrl-sm {
+    background: none;
+    border: none;
+    color: var(--v-muted, #8b949e);
+    font-size: clamp(1.1rem, 3vw, 1.4rem);
+    cursor: pointer;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transition: color .15s, background .15s, transform .1s;
+}
+.ctrl-sm:hover { 
+    color: var(--v-text, #e6edf3); 
+    background: rgba(255,255,255,.08); 
+}
+.play-btn {
+    width: clamp(48px, 10vw, 64px);
+    height: clamp(48px, 10vw, 64px);
+    font-size: clamp(1.3rem, 3vw, 1.8rem);
+    background: var(--v-accent, #58a6ff) !important;
+    color: #000 !important;
+}
+.play-btn:hover { transform: scale(1.08); }
+
+/* Secondary controls row (shuffle, recurse, volume) */
+.audio-secondary-controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+}
+.vol-wrap {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    flex: 1;
+    max-width: 200px;
+}
+.volume-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 4px;
+    background: rgba(255,255,255,.15);
+    border-radius: 2px;
+    outline: none;
+    cursor: pointer;
+}
+.volume-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: #fff;
+    cursor: pointer;
+    transition: transform .1s;
+}
+.volume-slider::-webkit-slider-thumb:hover { transform: scale(1.2); }
+.volume-slider::-moz-range-thumb {
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: #fff;
+    cursor: pointer;
+    border: none;
+}
+
+/* Active state for shuffle/recurse */
+.ctrl-sm.active-shuffle, .ctrl-sm.active-recurse {
+    color: var(--v-accent, #58a6ff) !important;
+}
+
+@media (max-width: 768px) {
+    .equalizer-container { gap: 2px; }
+    .eq-bar { width: 4px; border-radius: 2px; }
+    .audio-info-area { padding: .75rem 1rem 0.35rem; }
+    .audio-progress-wrap { padding: 0 1rem; margin-bottom: .5rem; }
+    .audio-controls-area { padding: .35rem 1rem .75rem; }
+}
+
+
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="player-page-layout">
-    <!-- top bar -->
-    <div class="d-flex align-items-center gap-2 px-3 py-2 border-bottom border-secondary bg-dark flex-wrap">
-        <a href="{{ url_for('explorer') }}{% if file.parent_id is not none %}?parent_id={{ file.parent_id }}{% endif %}" class="btn btn-sm btn-outline-secondary">
-            <i class="fas fa-arrow-left"></i>
-        </a>
-        <span class="text-truncate fw-semibold flex-grow-1" style="min-width:0">{{ file.name }}</span>
-        <!-- File navigation -->
-        <div class="d-flex align-items-center gap-1">
-            <span class="nav-pos" id="navPos"></span>
-            <button class="btn btn-sm btn-outline-secondary nav-btn" id="prevBtn" title="Previous" disabled>
-                <i class="fas fa-chevron-left"></i>
-            </button>
-            <button class="btn btn-sm btn-outline-secondary nav-btn" id="nextBtn" title="Next" disabled>
-                <i class="fas fa-chevron-right"></i>
-            </button>
-            <button class="btn btn-sm btn-outline-secondary shuffle-btn" id="shuffleBtn" title="Shuffle">
-                <i class="fas fa-random"></i>
-            </button>
-            <button class="btn btn-sm btn-outline-success recurse-btn active" id="recurseBtn" title="Toggle recursive navigation (spans subdirectories)">
-                <i class="fas fa-layer-group me-1"></i><span class="d-none d-md-inline">Recursive</span>
-            </button>
-        </div>
-        <a href="{{ url_for('download_file', file_id=file.id) }}" class="btn btn-sm btn-outline-primary">
-            <i class="fas fa-download me-1"></i><span class="d-none d-sm-inline">Download</span>
-        </a>
-    </div>
+{% set mime = file.mime_type or '' %}
 
-    {% set mime = file.mime_type or '' %}
+<!-- Top bar -->
+<div class="d-flex align-items-center gap-2 px-3 py-2 border-bottom border-secondary bg-dark flex-wrap" id="topBar">
+    <a href="{{ url_for('explorer') }}{% if file.parent_id is not none %}?parent_id={{ file.parent_id }}{% endif %}" class="btn btn-sm btn-outline-secondary">
+        <i class="fas fa-arrow-left"></i>
+    </a>
 
-    {% if mime.startswith('video/') %}
-    <!-- HLS Video Player (on-demand, Jellyfin-style) -->
-    <div id="hlsContainer" class="flex-grow-1 position-relative bg-black d-flex flex-column">
-        <!-- Loading overlay (hides once first frame arrives) -->
-        <div id="hlsLoading" class="position-absolute top-0 start-0 w-100 h-100 d-flex flex-column align-items-center justify-content-center" style="z-index:10;background:#000">
-            <div class="spinner-border text-primary mb-3" style="width:3rem;height:3rem" role="status">
-                <span class="visually-hidden">Loading…</span>
-            </div>
-            <h5 class="text-light" id="loadingTitle">Preparing…</h5>
-            <p class="text-secondary small mb-1" id="loadingDetail">Starting session</p>
-            <!-- Progress bar -->
-            <div style="width:280px;max-width:90%" class="mt-2">
-                <div class="progress" style="height:6px;background:#333">
-                    <div class="progress-bar bg-primary" id="loadingProgress" role="progressbar" style="width:0%;transition:width .3s"></div>
-                </div>
-                <p class="text-secondary small text-center mt-1 mb-0" id="loadingPct"></p>
-            </div>
-        </div>
-
-        <!-- Error overlay (hidden) -->
-        <div id="hlsError" class="d-none position-absolute top-0 start-0 w-100 h-100 d-flex flex-column align-items-center justify-content-center" style="z-index:11;background:#000">
-            <i class="fas fa-exclamation-triangle fa-3x text-danger mb-3"></i>
-            <h5 class="text-light">Playback Error</h5>
-            <p class="text-danger" id="hlsErrorMsg"></p>
-            <button class="btn btn-sm btn-outline-danger" onclick="location.reload()">
-                <i class="fas fa-redo me-1"></i>Retry
-            </button>
-        </div>
-
-        <video id="hlsVideo"
-               style="width:100%;flex:1;min-height:0;background:#000"></video>
-
-        <!-- Settings panel (anchored above controls bar) -->
-        <div id="settingsPanel" class="settings-panel d-none">
-            <div class="settings-header">
-                <span class="fw-semibold">Settings</span>
-                <button id="settingsClose" class="btn btn-sm btn-link text-light p-0">
-                    <i class="fas fa-times"></i>
-                </button>
-            </div>
-            <div id="audioTrackGroup" class="settings-row d-none">
-                <label class="settings-label"><i class="fas fa-volume-up me-1"></i>Audio</label>
-                <select id="audioTrackSelect" class="settings-select"></select>
-            </div>
-            <div id="subtitleTrackGroup" class="settings-row d-none">
-                <label class="settings-label"><i class="fas fa-closed-captioning me-1"></i>Subtitles</label>
-                <select id="subtitleTrackSelect" class="settings-select"></select>
-            </div>
-            <div id="subOffsetGroup" class="settings-row d-none">
-                <label class="settings-label"><i class="fas fa-clock me-1"></i>Sub Offset</label>
-                <div class="d-flex align-items-center gap-2">
-                    <button class="offset-btn" id="subOffsetDown" title="-0.5s"><i class="fas fa-minus"></i></button>
-                    <span id="subOffsetValue" class="offset-value">0.0s</span>
-                    <button class="offset-btn" id="subOffsetUp" title="+0.5s"><i class="fas fa-plus"></i></button>
-                </div>
-            </div>
-            <div class="settings-row">
-                <label class="settings-label"><i class="fas fa-forward me-1"></i>Skip Time</label>
-                <div class="d-flex align-items-center gap-2">
-                    <button class="offset-btn" id="skipAmtDown" title="-5s"><i class="fas fa-minus"></i></button>
-                    <span id="skipAmtValue" class="offset-value">15s</span>
-                    <button class="offset-btn" id="skipAmtUp" title="+5s"><i class="fas fa-plus"></i></button>
-                </div>
-            </div>
-            <div id="audioCacheGroup" class="settings-row d-none">
-                <label class="settings-label"><i class="fas fa-database me-1"></i>Audio Cache</label>
-                <button id="clearCacheBtn" class="btn btn-sm btn-outline-warning">
-                    <i class="fas fa-trash me-1"></i>Clear
-                </button>
-            </div>
-        </div>
-
-        <!-- Custom controls bar -->
-        <div class="video-controls" id="videoControls">
-            <button class="ctrl-btn" id="skipBackBtn" title="Skip back">
-                <i class="fas fa-undo"></i>
-                <span class="skip-badge" id="skipBackLabel">15</span>
-            </button>
-            <button class="ctrl-btn" id="playPauseBtn" title="Play / Pause">
-                <i class="fas fa-play" id="playIcon"></i>
-            </button>
-            <button class="ctrl-btn" id="skipFwdBtn" title="Skip forward">
-                <i class="fas fa-redo"></i>
-                <span class="skip-badge" id="skipFwdLabel">15</span>
-            </button>
-            <span class="ctrl-time" id="timeDisplay">0:00 / 0:00</span>
-            <div class="ctrl-progress" id="progressBar">
-                <div class="ctrl-progress-buffer" id="bufferBar"></div>
-                <div class="ctrl-progress-fill" id="progressFill"></div>
-            </div>
-            <div class="ctrl-vol-wrap">
-                <button class="ctrl-btn" id="muteBtn" title="Mute">
-                    <i class="fas fa-volume-up" id="volIcon"></i>
-                </button>
-                <input type="range" class="ctrl-vol-slider" id="volSlider" min="0" max="1" step="0.05" value="1">
-            </div>
-            <button class="ctrl-btn" id="settingsBtn" title="Settings">
-                <i class="fas fa-cog"></i>
-            </button>
-            <button class="ctrl-btn" id="fullscreenBtn" title="Fullscreen">
-                <i class="fas fa-expand" id="fsIcon"></i>
-            </button>
-        </div>
-    </div>
-
-    <script src="{{ url_for('static', filename='lib/hlsjs/hls.min.js') }}"></script>
-    <script>window.__PLAYER_CONFIG = { fileId: {{ file.id }}, mime: '{{ file.mime_type }}' };</script>
-    <script src="{{ url_for('static', filename='js/player.js') }}"></script>
-
-    {% elif mime.startswith('audio/') %}
-    <div class="flex-grow-1 d-flex flex-column align-items-center justify-content-center">
-        <i class="fas fa-music fa-5x text-primary mb-4 opacity-50"></i>
-        <h5 class="mb-4">{{ file.name }}</h5>
-        <audio controls autoplay style="width:min(100%,500px)">
-            <source src="{{ url_for('stream_file', file_id=file.id) }}" type="{{ mime }}">
-        </audio>
-    </div>
-
-    {% elif mime.startswith('image/') %}
-    <div class="flex-grow-1 d-flex align-items-center justify-content-center p-3 overflow-auto">
-        <img src="{{ url_for('stream_file', file_id=file.id) }}"
-             class="img-fluid" style="max-height:90vh" alt="{{ file.name }}">
-    </div>
-
-    {% elif mime == 'application/pdf' %}
-    <iframe src="{{ url_for('stream_file', file_id=file.id) }}"
-            class="flex-grow-1 border-0" style="min-height:80vh"></iframe>
-
-    {% elif mime.startswith('text/') %}
-    <div class="flex-grow-1 d-flex flex-column align-items-center justify-content-center">
-        <i class="fas fa-file-pen fa-5x text-primary mb-4 opacity-50"></i>
-        <h5>{{ file.name }}</h5>
-        <p class="text-secondary">This file can be edited in the text editor.</p>
-        <a href="{{ url_for('editor', file_id=file.id) }}" class="btn btn-primary mt-2">
-            <i class="fas fa-file-pen me-2"></i>Open in Editor
-        </a>
-    </div>
-
-    {% else %}
-    <div class="flex-grow-1 d-flex flex-column align-items-center justify-content-center">
-        <i class="fas fa-file fa-5x text-secondary mb-4 opacity-25"></i>
-        <h5>{{ file.name }}</h5>
-        <p class="text-secondary">No preview available for this file type.</p>
-        <a href="{{ url_for('download_file', file_id=file.id) }}" class="btn btn-primary mt-2">
-            <i class="fas fa-download me-2"></i>Download
-        </a>
+    <!-- File navigation (hidden for audio — controls are in the player) -->
+    {% if not mime.startswith('audio/') %}
+    <div class="d-flex align-items-center gap-1 audio-top-nav">
+        <span class="nav-pos" id="navPos"></span>
+        <button class="btn btn-sm btn-outline-secondary nav-btn" id="prevBtn" title="Previous" disabled>
+            <i class="fas fa-chevron-left"></i>
+        </button>
+        <button class="btn btn-sm btn-outline-secondary nav-btn" id="nextBtn" title="Next" disabled>
+            <i class="fas fa-chevron-right"></i>
+        </button>
+        <button class="btn btn-sm btn-outline-secondary shuffle-btn" id="shuffleBtn" title="Shuffle">
+            <i class="fas fa-random"></i>
+        </button>
+        <button class="btn btn-sm btn-outline-success recurse-btn active" id="recurseBtn" title="Toggle recursive navigation (spans subdirectories)">
+            <i class="fas fa-layer-group me-1"></i><span class="d-none d-md-inline">Recursive</span>
+        </button>
     </div>
     {% endif %}
+
+    <!-- Audio: show truncated name in top bar -->
+    {% if mime.startswith('audio/') %}
+    <span class="text-truncate fw-semibold flex-grow-1" style="min-width:0; font-size:.85rem">{{ file.name }}</span>
+    {% else %}
+    <span class="text-truncate fw-semibold flex-grow-1" style="min-width:0">{{ file.name }}</span>
+    {% endif %}
+
+    <a href="{{ url_for('download_file', file_id=file.id) }}" class="btn btn-sm btn-outline-primary">
+        <i class="fas fa-download me-1"></i><span class="d-none d-sm-inline">Download</span>
+    </a>
 </div>
 
+{% if mime.startswith('video/') %}
+<!-- HLS Video Player (on-demand, Jellyfin-style) -->
+<div id="hlsContainer" class="flex-grow-1 position-relative bg-black d-flex flex-column">
+    <div id="hlsLoading" class="position-absolute top-0 start-0 w-100 h-100 d-flex flex-column align-items-center justify-content-center" style="z-index:10;background:#000">
+        <div class="spinner-border text-primary mb-3" style="width:3rem;height:3rem" role="status"><span class="visually-hidden">Loading…</span></div>
+        <h5 class="text-light" id="loadingTitle">Preparing…</h5>
+        <p class="text-secondary small mb-1" id="loadingDetail">Starting session</p>
+        <div style="width:280px;max-width:90%" class="mt-2"><div class="progress" style="height:6px;background:#333"><div class="progress-bar bg-primary" id="loadingProgress" role="progressbar" style="width:0%;transition:width .3s"></div></div><p class="text-secondary small text-center mt-1 mb-0" id="loadingPct"></p></div>
+    </div>
+
+    <div id="hlsError" class="d-none position-absolute top-0 start-0 w-100 h-100 d-flex flex-column align-items-center justify-content-center" style="z-index:11;background:#000">
+        <i class="fas fa-exclamation-triangle fa-3x text-danger mb-3"></i>
+        <h5 class="text-light">Playback Error</h5>
+        <p class="text-danger" id="hlsErrorMsg"></p>
+        <button class="btn btn-sm btn-outline-danger" onclick="location.reload()"><i class="fas fa-redo me-1"></i>Retry</button>
+    </div>
+
+    <video id="hlsVideo" style="width:100%;flex:1;min-height:0;background:#000"></video>
+
+    <!-- Settings panel -->
+    <div id="settingsPanel" class="settings-panel d-none">
+        <div class="settings-header"><span class="fw-semibold">Settings</span><button id="settingsClose" class="btn btn-sm btn-link text-light p-0"><i class="fas fa-times"></i></button></div>
+        <div id="audioTrackGroup" class="settings-row d-none"><label class="settings-label"><i class="fas fa-volume-up me-1"></i>Audio</label><select id="audioTrackSelect" class="settings-select"></select></div>
+        <div id="subtitleTrackGroup" class="settings-row d-none"><label class="settings-label"><i class="fas fa-closed-captioning me-1"></i>Subtitles</label><select id="subtitleTrackSelect" class="settings-select"></select></div>
+        <div id="subOffsetGroup" class="settings-row d-none"><label class="settings-label"><i class="fas fa-clock me-1"></i>Sub Offset</label><div class="d-flex align-items-center gap-2"><button class="offset-btn" id="subOffsetDown" title="-0.5s"><i class="fas fa-minus"></i></button><span id="subOffsetValue" class="offset-value">0.0s</span><button class="offset-btn" id="subOffsetUp" title="+0.5s"><i class="fas fa-plus"></i></button></div></div>
+        <div class="settings-row"><label class="settings-label"><i class="fas fa-forward me-1"></i>Skip Time</label><div class="d-flex align-items-center gap-2"><button class="offset-btn" id="skipAmtDown" title="-5s"><i class="fas fa-minus"></i></button><span id="skipAmtValue" class="offset-value">15s</span><button class="offset-btn" id="skipAmtUp" title="+5s"><i class="fas fa-plus"></i></button></div></div>
+        <div id="audioCacheGroup" class="settings-row d-none"><label class="settings-label"><i class="fas fa-database me-1"></i>Audio Cache</label><button id="clearCacheBtn" class="btn btn-sm btn-outline-warning"><i class="fas fa-trash me-1"></i>Clear</button></div>
+    </div>
+
+    <!-- Custom controls bar -->
+    <div class="video-controls" id="videoControls">
+        <button class="ctrl-btn" id="skipBackBtn" title="Skip back"><i class="fas fa-undo"></i><span class="skip-badge" id="skipBackLabel">15</span></button>
+        <button class="ctrl-btn" id="playPauseBtn" title="Play / Pause"><i class="fas fa-play" id="playIcon"></i></button>
+        <button class="ctrl-btn" id="skipFwdBtn" title="Skip forward"><i class="fas fa-redo"></i><span class="skip-badge" id="skipFwdLabel">15</span></button>
+        <span class="ctrl-time" id="timeDisplay">0:00 / 0:00</span>
+        <div class="ctrl-progress" id="progressBar"><div class="ctrl-progress-buffer" id="bufferBar"></div><div class="ctrl-progress-fill" id="progressFill"></div></div>
+        <div class="ctrl-vol-wrap">
+            <button class="ctrl-btn" id="muteBtn" title="Mute"><i class="fas fa-volume-up" id="volIcon"></i></button>
+            <input type="range" class="ctrl-vol-slider" id="volSlider" min="0" max="1" step="0.05" value="1">
+        </div>
+        <button class="ctrl-btn" id="settingsBtn" title="Settings"><i class="fas fa-cog"></i></button>
+        <button class="ctrl-btn" id="fullscreenBtn" title="Fullscreen"><i class="fas fa-expand" id="fsIcon"></i></button>
+    </div>
+</div>
+
+<script src="{{ url_for('static', filename='lib/hlsjs/hls.min.js') }}"></script>
+<script>window.__PLAYER_CONFIG = { fileId: {{ file.id }}, mime: '{{ file.mime_type }}', position: {{ vprefs.position|default(0, true) }}, sub_offset: {{ vprefs.sub_offset|default(0, true) }} };</script>
+<script src="{{ url_for('static', filename='js/player.js') }}"></script>
+
+{% elif mime.startswith('audio/') %}
+<!-- Full-screen audio player -->
+<div class="audio-full-page">
+    <!-- Visualizer area (takes up most of the screen) -->
+    <div class="audio-visual-area paused" id="audioVisualArea">
+        <div class="equalizer-container" id="eqContainer"></div>
+    </div>
+
+    <!-- Song info + progress -->
+    <div class="audio-info-area">
+        <div class="audio-title text-truncate" title="{{ file.name }}">{{ file.name }}</div>
+        {% if file.metadata and file.metadata.get('artist') %}
+        <div class="audio-meta">{{ file.metadata['artist']|default('Unknown Artist') }}</div>
+        {% endif %}
+
+        <!-- Progress bar -->
+        <div class="audio-progress-wrap">
+            <div class="audio-time-row">
+                <span id="audioCurrentTime">0:00</span>
+                <span id="audioDuration">--:--</span>
+            </div>
+            <div class="audio-progress-bar" id="audioProgressBar">
+                <div class="audio-progress-fill" id="audioProgressFill"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Controls -->
+    <div class="audio-controls-area">
+        <!-- Main controls (prev, play, next) -->
+        <div class="audio-main-controls">
+            <button class="ctrl-sm" id="audioRecurseBtn" title="Toggle recursive navigation (spans subdirectories)">
+                <i class="fas fa-layer-group"></i>
+            </button>
+            <button class="ctrl-sm" id="audioPrevBtn" title="Previous">
+                <i class="fas fa-step-backward"></i>
+            </button>
+            <button class="ctrl-sm play-btn" id="audioPlayBtn" title="Play / Pause">
+                <i class="fas fa-play" id="audioPlayIcon"></i>
+            </button>
+            <button class="ctrl-sm" id="audioNextBtn" title="Next">
+                <i class="fas fa-step-forward"></i>
+            </button>
+            <button class="ctrl-sm" id="audioShuffleBtn" title="Shuffle">
+                <i class="fas fa-random"></i>
+            </button>
+        </div>
+
+        <!-- Secondary controls (volume + status) -->
+        <div class="audio-secondary-controls">
+            <span id="navStatus" style="font-size:.75rem;color:var(--v-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px"></span>
+            <div class="vol-wrap">
+                <button class="ctrl-sm" id="audioMuteBtn" title="Mute" style="width:auto;padding:0 .5rem;font-size:.9rem"><i class="fas fa-volume-up" id="audioVolIcon"></i></button>
+                <input type="range" class="volume-slider" id="audioVolumeSlider" min="0" max="1" step="0.05" value="1">
+            </div>
+        </div>
+    </div>
+
+    <!-- Hidden native audio element -->
+    <audio id="nativeAudio" preload="auto">
+        <source src="{{ url_for('stream_file', file_id=file.id) }}" type="{{ mime }}">
+    </audio>
+</div>
+
+<script>window.__PLAYER_CONFIG = { fileId: {{ file.id }}, mime: '{{ file.mime_type }}' };</script>
+<script src="{{ url_for('static', filename='js/audio-player.js') }}"></script>
+
+{% elif mime.startswith('image/') %}
+<div class="flex-grow-1 d-flex align-items-center justify-content-center p-3 overflow-auto">
+    <img src="{{ url_for('stream_file', file_id=file.id) }}"
+         class="img-fluid" style="max-height:90vh" alt="{{ file.name }}">
+</div>
+
+{% elif mime == 'application/pdf' %}
+<iframe src="{{ url_for('stream_file', file_id=file.id) }}"
+        class="flex-grow-1 border-0" style="min-height:80vh"></iframe>
+
+{% elif mime.startswith('text/') %}
+<div class="flex-grow-1 d-flex flex-column align-items-center justify-content-center">
+    <i class="fas fa-file-pen fa-5x text-primary mb-4 opacity-50"></i>
+    <h5>{{ file.name }}</h5>
+    <p class="text-secondary">This file can be edited in the text editor.</p>
+    <a href="{{ url_for('editor', file_id=file.id) }}" class="btn btn-primary mt-2"><i class="fas fa-file-pen me-2"></i>Open in Editor</a>
+</div>
+
+{% else %}
+<div class="flex-grow-1 d-flex flex-column align-items-center justify-content-center">
+    <i class="fas fa-file fa-5x text-secondary mb-4 opacity-25"></i>
+    <h5>{{ file.name }}</h5>
+    <p class="text-secondary">No preview available for this file type.</p>
+    <a href="{{ url_for('download_file', file_id=file.id) }}" class="btn btn-primary mt-2"><i class="fas fa-download me-2"></i>Download</a>
+</div>
+{% endif %}
+
+<script>window.__PLAYER_CONFIG = { fileId: {{ file.id }}, mime: '{{ file.mime_type }}' };
+document.body.classList.add('player-page');
 {% endblock %}
