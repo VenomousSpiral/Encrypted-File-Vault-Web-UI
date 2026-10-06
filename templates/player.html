@@ -352,17 +352,19 @@
 <script src="{{ url_for('static', filename='js/audio-player.js') }}"></script>
 
 {% elif mime.startswith('image/') %}
-<div class="flex-grow-1 d-flex align-items-center justify-content-center p-3 overflow-auto">
+<div id="viewerContainer" style="height:calc(100vh - 56px);display:flex;align-items:center;justify-content:center;background:#0d1117">
     <img src="{{ url_for('stream_file', file_id=file.id) }}"
-         class="img-fluid" style="max-height:90vh" alt="{{ file.name }}">
+         class="img-fluid" style="max-height:calc(100% - 2rem);max-width:100%;object-fit:contain;display:block;margin:auto;" alt="{{ file.name }}">
 </div>
 
 {% elif mime == 'application/pdf' %}
-<iframe src="{{ url_for('stream_file', file_id=file.id) }}"
-        class="flex-grow-1 border-0" style="min-height:80vh"></iframe>
+<div id="viewerContainer" style="height:calc(100vh - 56px);display:flex;align-items:center;justify-content:center;background:#0d1117;padding:8px">
+    <iframe src="{{ url_for('stream_file', file_id=file.id) }}"
+            class="w-100 h-100 border-0" style="border-radius:4px"></iframe>
+</div>
 
 {% elif mime.startswith('text/') %}
-<div class="flex-grow-1 d-flex flex-column align-items-center justify-content-center">
+<div id="viewerContainer" style="height:calc(100vh - 56px);display:flex;align-items:center;justify-content:center;background:#0d1117">
     <i class="fas fa-file-pen fa-5x text-primary mb-4 opacity-50"></i>
     <h5>{{ file.name }}</h5>
     <p class="text-secondary">This file can be edited in the text editor.</p>
@@ -370,7 +372,7 @@
 </div>
 
 {% else %}
-<div class="flex-grow-1 d-flex flex-column align-items-center justify-content-center">
+<div id="viewerContainer" style="height:calc(100vh - 56px);display:flex;align-items:center;justify-content:center;background:#0d1117">
     <i class="fas fa-file fa-5x text-secondary mb-4 opacity-25"></i>
     <h5>{{ file.name }}</h5>
     <p class="text-secondary">No preview available for this file type.</p>
