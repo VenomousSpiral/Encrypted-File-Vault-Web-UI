@@ -161,16 +161,19 @@
         </div>
 
         <!-- File navigation -->
-        <div class="d-flex align-items-center gap-1">
-            <span style="font-size:.7rem;color:#8b949e;white-space:nowrap" id="navPos"></span>
-            <button class="btn btn-sm btn-outline-secondary" id="prevBtn" title="Previous" disabled style="min-width:28px;padding:2px 6px">
+        <div class="audio-top-nav d-flex align-items-center gap-1">
+            <span id="navPos" style="font-size:.75rem;color:var(--bs-secondary-color);white-space:nowrap"></span>
+            <button class="btn btn-sm btn-outline-secondary nav-btn" id="prevBtn" title="Previous">
                 <i class="fas fa-chevron-left"></i>
             </button>
-            <button class="btn btn-sm btn-outline-secondary" id="nextBtn" title="Next" disabled style="min-width:28px;padding:2px 6px">
+            <button class="btn btn-sm btn-outline-secondary nav-btn" id="nextBtn" title="Next">
                 <i class="fas fa-chevron-right"></i>
             </button>
-            <button class="btn btn-sm btn-outline-secondary" id="shuffleBtn" title="Shuffle" style="min-width:28px;padding:2px 6px">
+            <button class="btn btn-sm btn-outline-secondary shuffle-btn active" id="shuffleBtn" title="Shuffle">
                 <i class="fas fa-random"></i>
+            </button>
+            <button class="btn btn-sm btn-outline-success recurse-btn active nav-btn" id="recurseBtn" title="Toggle recursive navigation (spans subdirectories)">
+                <i class="fas fa-layer-group me-1"></i><span class="d-none d-md-inline">Recursive</span>
             </button>
         </div>
 
@@ -209,6 +212,7 @@
     </div>
 </div>
 
-<script>window.__EDITOR_CONFIG = { fileId: {{ file.id }} };</script>
+<script>window.__EDITOR_CONFIG = { fileId: {{ file.id }} }; window.__PLAYER_CONFIG = { fileId: {{ file.id }} };</script>
+<script src="{{ url_for('static', filename='js/file-nav.js') }}"></script>
 <script src="{{ url_for('static', filename='js/editor.js') }}"></script>
 {% endblock %}
