@@ -5,6 +5,8 @@
 // ════════════════════════════════════════════════════════════════════
 
 (function() {
+    const modal = id => bootstrap.Modal.getOrCreateInstance(document.getElementById(id));
+
     // ── Toast notifications (local to this module, matches original app.js behavior) ──
     function showToast(message, type = 'info', duration = 6000) {
         const container = document.getElementById('toastContainer');
