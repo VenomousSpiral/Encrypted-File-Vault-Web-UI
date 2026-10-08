@@ -1,57 +1,10 @@
 """Media player and sibling navigation helpers."""
 
-
-def _media_category(mime: str) -> str:
-    """Return a broad category string for grouping sibling navigation."""
-    mime = (mime or '').lower()
-    if mime.startswith('video/'):
-        return 'video'
-    if mime.startswith('audio/'):
-        return 'audio'
-    if mime.startswith('image/'):
-        return 'image'
-    if mime.startswith('text/') or mime in {
-        'application/json', 'application/xml', 'application/javascript',
-        'application/x-yaml', 'application/yaml', 'application/toml',
-        'application/x-sh', 'application/x-shellscript',
-        'application/sql', 'application/xhtml+xml', 'application/x-httpd-php',
-    }:
-        return 'text'
-    if mime == 'application/pdf':
-        return 'document'
-    return 'other'
-
-
-def _sort_files(files, sort_by='name'):
-    """Sort a list of file dicts by the given preference."""
-    import random as _random  # noqa: F401
-
-    if sort_by == 'name':
-        files.sort(key=lambda d: (d.get('name') or '').lower())
-    elif sort_by in ('recent', 'added', 'size'):
-        if sort_by == 'recent':
-            files.sort(key=lambda d: (d.get('last_accessed') or ''), reverse=True)
-        elif sort_by == 'added':
-            files.sort(key=lambda d: (d.get('created_at') or ''), reverse=True)
-        else:
-            files.sort(key=lambda d: int(d.get('size') or 0), reverse=True)
-    return files
-
-
-def _collect_recursive(uid, parent_id, cat, mk, exclude_id=None):
-    """Collect all non-directory files of a given category recursively."""
-    from models import list_files as _list_files
-
-    items = _list_files(uid, parent_id, key=mk)
-    result = []
-    for item in items:
-        if item['is_directory']:
-            result.extend(_collect_recursive(uid, item['id'], cat, mk, exclude_id))
-        elif _media_category(item.get('mime_type')) == cat:
-            if exclude_id is None or item['id'] != exclude_id:
-                result.append(item)
-    return result
-
+from .app_helpers_media import (
+    collect_recursive,
+    media_category,
+    sort_files,
+)
 
 def api_siblings(file_id):
     """Return prev/next file IDs and recursive total for same-type files."""
@@ -69,9 +22,9 @@ def api_siblings(file_id):
     if not f:
         return jsonify({'error': 'Not found'}), 404
 
-    cat = _media_category(f.get('mime_type'))
+    cat = media_category(f.get('mime_type'))
 
-    raw_sort = request().args.get('sort_by', '').strip().lower()
+    raw_sort = request().args.get('sort_by', '').strip()
     if raw_sort in ('name', 'recent', 'added', 'size'):
         sort_by = raw_sort
     else:
@@ -89,12 +42,12 @@ def api_siblings(file_id):
         root_id = None if root_raw in ('null', '') else int(root_raw)
 
     if do_recurse:
-        all_recursive = _collect_recursive(uid, root_id, cat, mk)
-        typed_collection = _sort_files(all_recursive, sort_by)
+        all_recursive = collect_recursive(uid, root_id, cat, mk)
+        typed_collection = sort_files(all_recursive, sort_by)
     else:
         direct_siblings = _lf(uid, f['parent_id'], key=mk)
-        typed_collection = [s for s in direct_siblings if not s['is_directory'] and _media_category(s.get('mime_type')) == cat]
-        typed_collection = _sort_files(typed_collection, sort_by)
+        typed_collection = [s for s in direct_siblings if not s['is_directory'] and media_category(s.get('mime_type')) == cat]
+        typed_collection = sort_files(typed_collection, sort_by)
 
     ids_in_order = [s['id'] for s in typed_collection]
     try:
@@ -134,7 +87,7 @@ def api_random_sibling(file_id):
     if not f:
         return jsonify({'error': 'Not found'}), 404
 
-    cat = _media_category(f.get('mime_type'))
+    cat = media_category(f.get('mime_type'))
 
     raw_recurse = request().args.get('recurse', '').strip()
     do_recurse = True if raw_recurse not in ('0', 'no', 'false') else False
@@ -145,11 +98,11 @@ def api_random_sibling(file_id):
         root_id = None if root_raw in ('null', '') else int(root_raw)
 
     if do_recurse:
-        candidates = _collect_recursive(uid, root_id, cat, mk, exclude_id=file_id)
+        candidates = collect_recursive(uid, root_id, cat, mk, exclude_id=file_id)
     else:
         direct_siblings = _lf(uid, f['parent_id'], key=mk)
         candidates = [s for s in direct_siblings 
-                      if not s['is_directory'] and _media_category(s.get('mime_type')) == cat]
+                      if not s['is_directory'] and media_category(s.get('mime_type')) == cat]
 
     candidates = [c for c in candidates if c['id'] != file_id]
 

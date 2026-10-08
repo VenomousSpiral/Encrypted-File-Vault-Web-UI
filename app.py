@@ -394,143 +394,19 @@ def player(file_id):
     return render_template('player.html', file=dict(f), prefs=prefs, vprefs=vprefs)
 
 
-def _media_category(mime):
-    """Return a broad category string for grouping sibling navigation."""
-    mime = (mime or '').lower()
-    if mime.startswith('video/'):
-        return 'video'
-    if mime.startswith('audio/'):
-        return 'audio'
-    if mime.startswith('image/'):
-        return 'image'
-    if mime.startswith('text/') or mime in {
-        'application/json', 'application/xml', 'application/javascript',
-        'application/x-yaml', 'application/yaml', 'application/toml',
-        'application/x-sh', 'application/x-shellscript',
-        'application/sql', 'application/xhtml+xml', 'application/x-httpd-php',
-    }:
-        return 'text'
-    if mime == 'application/pdf':
-        return 'document'
-    return 'other'
-
-
-# ── sort helpers for sibling navigation ────────────────────────
-def _sort_files(files, sort_by='name'):
-    """Sort a list of file dicts by the given preference.
-
-    Returns files sorted in ascending order so prev/next indices work correctly.
-    For 'recent' and 'added', descending means newest first (reverse = True).
-    For 'size', largest first (descending).
-    """
-    if sort_by == 'name':
-        # Ascending alphabetical
-        files.sort(key=lambda d: (d.get('name') or '').lower())
-    elif sort_by in ('recent', 'added', 'size'):
-        # Descending = newest/largest first, so we reverse for ascending prev/next logic
-        if sort_by == 'recent':
-            files.sort(key=lambda d: (d.get('last_accessed') or ''), reverse=True)
-        elif sort_by == 'added':
-            files.sort(key=lambda d: (d.get('created_at') or ''), reverse=True)
-        else:
-            # size descending
-            files.sort(key=lambda d: int(d.get('size') or 0), reverse=True)
-    return files
-
-
-def _collect_recursive(uid, parent_id, cat, mk, exclude_id=None):
-    """Collect all non-directory files of a given category recursively."""
-    items = list_files(uid, parent_id, key=mk)
-    result = []
-    for item in items:
-        if item['is_directory']:
-            result.extend(_collect_recursive(uid, item['id'], cat, mk, exclude_id))
-        elif _media_category(item.get('mime_type')) == cat:
-            if exclude_id is None or item['id'] != exclude_id:
-                result.append(item)
-    return result
-
+# ── Media utility imports (consolidated from helpers.app_helpers_media)
+# Re-exported via helpers/__init__.py for discoverability
+from helpers.app_helpers_media import (
+    collect_recursive,  # noqa: F401 — re-exported through __init__
+    media_category,     # noqa: F401 — same
+    sort_files,         # noqa: F401 — same
+)
 
 @app.route('/api/siblings/<int:file_id>')
 @login_required
 def api_siblings(file_id):
     from helpers.app_helpers_media_player import api_siblings as _sib  # noqa: F811
     return _sib(file_id)
-    """Return prev/next file IDs and recursive total for same-type files.
-
-    Accepts optional ?root=<parent_id> (or 'null' for vault root) to
-    compute the recursive total from a specific ancestor directory
-    instead of the file's immediate parent. Also accepts:
-      - sort_by=name|recent|added|size  – which sort order prev/next uses (default: name)
-      - recurse=0|1                    – whether navigation spans subdirs (default: 1)
-    """
-    uid = current_user.id
-    mk = _get_master_key()
-    f = get_file(file_id, uid, key=mk)
-    if not f:
-        return jsonify({'error': 'Not found'}), 404
-
-    cat = _media_category(f.get('mime_type'))
-
-    # ── resolve sort_by from query params (falls back to user pref) ────
-    raw_sort = request.args.get('sort_by', '').strip().lower()
-    if raw_sort in ('name', 'recent', 'added', 'size'):
-        sort_by = raw_sort
-    else:
-        # fall back to stored preference
-        prefs = get_user_preferences(uid, key=mk)
-        sort_by = (prefs.get('sort_preference') or 'name').strip().lower()
-        if sort_by not in ('name', 'recent', 'added', 'size'):
-            sort_by = 'name'
-
-    # ── resolve recurse from query params (falls back to 1) ───────────
-    raw_recurse = request.args.get('recurse', '').strip()
-    if raw_recurse in ('0', 'no', 'false'):
-        do_recurse = False
-    else:
-        # default: recurse through subdirs when browsing from a root context
-        do_recurse = True
-
-    # Use explicit root if provided, otherwise file's parent
-    root_raw = request.args.get('root', None)
-    if root_raw is not None:
-        root_id = None if root_raw in ('null', '') else int(root_raw)
-    else:
-        root_id = f['parent_id']
-
-    # ── Build the collection to navigate within (prev/next) ────────────
-    if do_recurse:
-        # Full recursive collection sorted by current preference
-        all_recursive = _collect_recursive(uid, root_id, cat, mk)
-        typed_collection = _sort_files(all_recursive, sort_by)
-    else:
-        # Direct siblings only in the same folder, using active sort
-        direct_siblings = list_files(uid, f['parent_id'], key=mk)
-        typed_collection = [s for s in direct_siblings if not s['is_directory'] and _media_category(s.get('mime_type')) == cat]
-        typed_collection = _sort_files(typed_collection, sort_by)
-
-    ids_in_order = [s['id'] for s in typed_collection]
-    try:
-        idx = ids_in_order.index(file_id)
-    except ValueError:
-        idx = -1
-
-    prev_id = ids_in_order[idx - 1] if idx > 0 else None
-    next_id = ids_in_order[idx + 1] if idx >= 0 and idx < len(ids_in_order) - 1 else None
-
-    # ── Total & position (match recursion mode used for navigation) ─
-    total_count = len(typed_collection)
-    current_position = idx + 1 if idx >= 0 else 0
-
-    return jsonify({
-        'prev_id': prev_id,
-        'next_id': next_id,
-        'total': total_count,
-        'position': current_position,
-        'root_parent_id': root_id,
-        'sort_by': sort_by,
-        'recurse': do_recurse,
-    })
 
 
 @app.route('/editor/<int:file_id>')
@@ -712,58 +588,6 @@ def api_reencode_clear():
 def api_export_keys():
     from helpers.app_helpers_users import api_export_keys as _aek  # noqa: F811
     return _aek()
-    """Download a .txt file containing encryption info needed to
-    restore / transfer the vault data.  Available to any logged-in user."""
-    from datetime import datetime
-
-    mk = _get_master_key()
-    mk_hex = mk.hex() if mk else '(vault locked — log out and back in)'
-
-    lines = [
-        '═══════════════════════════════════════════════════════',
-        '  Encrypted Vault — Key Backup',
-        f'  Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}',
-        f'  User:      {current_user.username}',
-        '═══════════════════════════════════════════════════════',
-        '',
-        '── Your Master Key ──────────────────────────────────',
-        '',
-        f'  MASTER_KEY = {mk_hex}',
-        '',
-        '  This 256-bit AES key encrypts ALL your vault files',
-        '  AND the file names / metadata in the database.',
-        '  It is normally wrapped (encrypted) by your login',
-        '  password — you do NOT need this key for everyday use.',
-        '',
-        '  ONLY use this key if you need to recover data after',
-        '  losing your password, or for programmatic access.',
-        '',
-        '── How to transfer your vault ──────────────────────',
-        '',
-        '  1. Copy the entire  data/  folder (vault.db + vault/)',
-        '  2. Start the vault server on the new machine',
-        '  3. Log in with YOUR SAME PASSWORD — that is all',
-        '',
-        '  Your password unlocks the master key which is stored',
-        '  (encrypted) inside vault.db.  No separate key file',
-        '  is needed.',
-        '',
-        '══════════════════════════════════════════════════════',
-        '  KEEP THIS FILE SECRET.  Anyone with the master key',
-        '  can decrypt ALL your vault files and read all your',
-        '  encrypted file names.  Delete after backing up.',
-        '══════════════════════════════════════════════════════',
-        '',
-    ]
-    content = '\n'.join(lines)
-    return Response(
-        content,
-        mimetype='text/plain',
-        headers={
-            'Content-Disposition': f'attachment; filename="vault-keys-{current_user.username}.txt"',
-            'Cache-Control': 'no-store',
-        },
-    )
 
 
 @app.route('/users')
@@ -784,35 +608,6 @@ def api_list_users():
 def api_create_user():
     from helpers.app_helpers_users import api_create_user as _acu  # noqa: F811
     return _acu()
-    """Admin creates a new user.  Each user gets their own independent
-    encryption key — the admin cannot access the new user's files."""
-    data = request.get_json(silent=True) or {}
-    username = data.get('username', '').strip()
-    password = data.get('password', '')
-    is_admin = bool(data.get('is_admin', False))
-
-    if not username or not password:
-        return jsonify({'error': 'Username and password required'}), 400
-    if len(password) < 8:
-        return jsonify({'error': 'Password must be at least 8 characters'}), 400
-    if get_user(username):
-        return jsonify({'error': 'Username already exists'}), 409
-
-    # Generate a UNIQUE key for this user (not shared with anyone)
-    mk = generate_master_key()
-    salt, nonce, enc_key = encrypt_master_key(mk, password)
-    try:
-        uid = create_user(
-            username,
-            generate_password_hash(password),
-            is_admin=is_admin,
-            key_salt=salt,
-            key_nonce=nonce,
-            key_encrypted=enc_key,
-        )
-        return jsonify({'id': uid, 'username': username, 'is_admin': is_admin})
-    except Exception as exc:
-        return jsonify({'error': str(exc)}), 400
 
 
 @app.route('/api/users/<int:user_id>/delete', methods=['POST'])
@@ -820,12 +615,6 @@ def api_create_user():
 def api_delete_user(user_id):
     from helpers.app_helpers_users import api_delete_user as _adu  # noqa: F811
     return _adu(user_id)
-    for vf in vault_files:
-        p = os.path.join(config.VAULT_DIR, vf)
-        if os.path.exists(p):
-            os.remove(p)
-    _user_keys.pop(user_id, None)
-    return jsonify({'success': True})
 
 
 @app.route('/api/users/<int:user_id>/reset-password', methods=['POST'])
@@ -833,30 +622,6 @@ def api_delete_user(user_id):
 def api_reset_password(user_id):
     from helpers.app_helpers_users import api_reset_password as _arp  # noqa: F811
     return _arp(user_id)
-    """Admin resets a user's password; re-wraps that user's own key."""
-    data = request.get_json(silent=True) or {}
-    password = data.get('password', '')
-    if len(password) < 8:
-        return jsonify({'error': 'Password must be at least 8 characters'}), 400
-
-    row = get_user_by_id(user_id)
-    if not row:
-        return jsonify({'error': 'User not found'}), 404
-
-    # We need the user's key in RAM to re-wrap it.  If that user is
-    # currently logged in we can use it; otherwise we can't reset.
-    entry = _user_keys.get(user_id)
-    if entry is None:
-        return jsonify({'error': 'That user must be logged in (key in RAM) to reset their password. '
-                        'Ask them to log in first, or they can change their own password.'}), 409
-
-    mk = entry[0]
-    salt, nonce, enc_key = encrypt_master_key(mk, password)
-    update_user_password(user_id, generate_password_hash(password),
-                         salt, nonce, enc_key)
-    # Evict their cached key so they must re-login with new password
-    _user_keys.pop(user_id, None)
-    return jsonify({'success': True})
 
 
 @app.route('/api/users/<int:user_id>/toggle-admin', methods=['POST'])
@@ -864,14 +629,6 @@ def api_reset_password(user_id):
 def api_toggle_admin(user_id):
     from helpers.app_helpers_users import api_toggle_admin as _ata  # noqa: F811
     return _ata(user_id)
-    if user_id == current_user.id:
-        return jsonify({'error': 'Cannot change your own admin status'}), 400
-    row = get_user_by_id(user_id)
-    if not row:
-        return jsonify({'error': 'User not found'}), 404
-    new_val = not bool(row['is_admin'])
-    set_user_admin(user_id, new_val)
-    return jsonify({'success': True, 'is_admin': new_val})
 
 
 @app.route('/api/change-password', methods=['POST'])
@@ -879,81 +636,9 @@ def api_toggle_admin(user_id):
 def api_change_password():
     from helpers.app_helpers_users import api_change_password as _acpw  # noqa: F811
     return _acpw()
-    data = request.get_json(silent=True) or {}
-    current_pw = data.get('current_password', '')
-    new_pw = data.get('new_password', '')
-
-    if len(new_pw) < 8:
-        return jsonify({'error': 'Password must be at least 8 characters'}), 400
-
-    row = get_user_by_id(current_user.id)
-    if not row or not check_password_hash(row['password_hash'], current_pw):
-        return jsonify({'error': 'Current password is incorrect'}), 403
-
-    mk = _get_master_key()
-    if mk is None:
-        return jsonify({'error': 'Vault is locked'}), 403
-
-    salt, nonce, enc_key = encrypt_master_key(mk, new_pw)
-    update_user_password(current_user.id, generate_password_hash(new_pw),
-                         salt, nonce, enc_key)
-    # Update in-memory key wrapping
-    _user_keys[current_user.id] = (mk, ChunkEncryptor(mk, config.CHUNK_SIZE))
-    return jsonify({'success': True})
 
 
-# ── HLS streaming API (on-demand, Jellyfin-style) ───────────────────
-
-def _get_or_start_session(file_id):
-    """Helper: get/create an HLS session for file_id, or abort."""
-    enc = _get_encryptor()
-    if enc is None:
-        abort(403)
-    f = get_file(file_id, current_user.id, key=_get_master_key())
-    if not f or f['is_directory']:
-        abort(404)
-    if not (f['mime_type'] or '').startswith('video/'):
-        abort(400)
-    mk = _get_master_key()
-    prefs = get_user_preferences(current_user.id, key=mk)
-    audio_lang = (prefs.get('default_audio_lang') or '').strip().lower()
-    cache_mode = (prefs.get('audio_cache_mode') or 'keep').strip().lower()
-    if cache_mode not in ('keep', 'save', 'overwrite'):
-        cache_mode = 'keep'
-
-    # Always load cached audio tracks — use them regardless of mode
-    cached_tracks = get_audio_cache_info(file_id) or None
-
-    # Overwrite callback to update file size in DB after re-mux
-    overwrite_cb = None
-    if cache_mode == 'overwrite':
-        uid = current_user.id
-        fid = file_id
-
-        def overwrite_cb(new_size):
-            from models import get_db, _encrypt_value, encrypt_field
-            from datetime import datetime, timezone
-            now = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
-            db = get_db()
-            db.execute(
-                'UPDATE files SET size = ?, modified_at = ? '
-                'WHERE id = ? AND owner_id = ?',
-                (_encrypt_value(mk, new_size),
-                 encrypt_field(mk, now),
-                 fid, uid))
-            db.commit()
-            db.close()
-
-    sess = get_session(file_id, encryptor=enc,
-                       vault_filename=f['vault_filename'],
-                       preferred_audio_lang=audio_lang,
-                       cache_mode=cache_mode,
-                       cached_tracks=cached_tracks,
-                       overwrite_callback=overwrite_cb)
-    if sess is None:
-        abort(500)
-    return sess
-
+# ── HLS streaming API
 
 @app.route('/api/hls/<int:file_id>/status')
 @login_required

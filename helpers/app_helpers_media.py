@@ -50,14 +50,29 @@ def _sort_files(files: list, sort_by: str = 'name') -> list:
     return files
 
 
-def _collect_recursive(uid, parent_id, cat, mk, exclude_id=None):
+def _collect_recursive(
+    uid: int,
+    parent_id: int | None,
+    cat: str,
+    mk,  # master key — opaque bytes
+    *,
+    exclude_id: int | None = None,
+) -> list[dict]:
     """Collect all non-directory files of a given category recursively."""
     items = list_files(uid, parent_id, key=mk)
     result: list[dict] = []
     for item in items:
         if item['is_directory']:
-            result.extend(_collect_recursive(uid, item['id'], cat, mk, exclude_id))
+            result.extend(_collect_recursive(
+                uid, item['id'], cat, mk, exclude_id=exclude_id,
+            ))
         elif _media_category(item.get('mime_type')) == cat:
             if exclude_id is None or item['id'] != exclude_id:
                 result.append(item)
     return result
+
+
+# ── public aliases (for new callers; internal code keeps using _prefixed) ─
+media_category = _media_category
+sort_files = _sort_files
+collect_recursive = _collect_recursive
