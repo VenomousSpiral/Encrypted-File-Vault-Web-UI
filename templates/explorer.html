@@ -16,7 +16,7 @@
       <i class="fas fa-ellipsis-v"></i>
     </button>
   </div>
-  <div class="collapse d-sm-flex mt-2 mt-sm-0" id="toolbarActions">
+  <div class="collapse d-sm-flex mt-2 mt-sm-0 toolbar-actions-scroll" id="toolbarActions">
     <div class="d-flex gap-2 flex-shrink-0 align-items-center flex-wrap">
       <!-- Search -->
       <div class="position-relative" id="searchWrap">
@@ -33,7 +33,7 @@
       <div class="dropdown">
         <button class="btn btn-sm btn-outline-secondary dropdown-toggle" id="sortBtn" data-bs-toggle="dropdown"
           title="Sort">
-          <i class="fas fa-sort me-1"></i><span class="d-none d-sm-inline" id="sortLabel">Name</span>
+          <i class="fas fa-sort me-1"></i><span class="d-none d-md-inline" id="sortLabel">Name</span>
         </button>
         <ul class="dropdown-menu dropdown-menu-end dropdown-menu-dark">
           <li><a class="dropdown-item active" href="#" data-sort="name"><i
@@ -47,27 +47,27 @@
         </ul>
       </div>
 <button class="btn btn-sm btn-outline-secondary" data-action="new-folder" title="New folder">
-        <i class="fas fa-folder-plus me-1"></i><span class="d-none d-sm-inline">New Folder</span>
+        <i class="fas fa-folder-plus me-1"></i><span class="d-none d-md-inline">New Folder</span>
       </button>
 <button class="btn btn-sm btn-outline-secondary" data-action="new-file" title="New text file">
-        <i class="fas fa-file-pen me-1"></i><span class="d-none d-sm-inline">New File</span>
+        <i class="fas fa-file-pen me-1"></i><span class="d-none d-md-inline">New File</span>
       </button>
 <button class="btn btn-sm btn-outline-secondary" data-action="enter-select-mode" title="Select files">
-        <i class="fas fa-check-double me-1"></i><span class="d-none d-sm-inline">Select</span>
+        <i class="fas fa-check-double me-1"></i><span class="d-none d-md-inline">Select</span>
       </button>
 <button class="btn btn-sm btn-outline-secondary position-relative" data-action="open-queue-panel"
         title="Re-encode Queue" id="queueBtn">
-        <i class="fas fa-tasks me-1"></i><span class="d-none d-sm-inline">Queue</span>
+        <i class="fas fa-tasks me-1"></i><span class="d-none d-md-inline">Queue</span>
         <span id="queueBadge" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-primary"
           style="display:none;font-size:.6rem"></span>
       </button>
 <button class="btn btn-sm btn-primary" data-toggle="upload-files"
         title="Upload files">
-        <i class="fas fa-upload me-1"></i><span class="d-none d-sm-inline">Upload</span>
+        <i class="fas fa-upload me-1"></i><span class="d-none d-md-inline">Upload</span>
       </button>
 <button class="btn btn-sm btn-outline-primary" data-toggle="upload-folder"
         title="Upload folder">
-        <i class="fas fa-folder-open me-1"></i><span class="d-none d-sm-inline">Folder</span>
+        <i class="fas fa-folder-open me-1"></i><span class="d-none d-md-inline">Folder</span>
       </button>
       <input type="file" id="fileInput" multiple hidden onchange="App.uploadFiles(this.files)">
       <input type="file" id="folderInput" hidden webkitdirectory onchange="App.uploadFiles(this.files)">

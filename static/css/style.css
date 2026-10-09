@@ -25,6 +25,19 @@ body {
 /* ── toolbar / breadcrumbs ───────────────────────────────────────── */
 .toolbar { min-height: 48px; }
 
+/* Horizontally scrollable toolbar actions on mobile – prevents overflow off-page */
+@media (max-width: 767px) {
+    .toolbar-actions-scroll {
+        max-height: none !important;
+        margin-left: -0.5rem;
+        margin-right: -0.5rem;
+        padding-left: 0.5rem;
+        padding-right: 0.5rem;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+}
+
 #breadcrumbs {
     display: flex;
     gap: .25rem;
