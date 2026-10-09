@@ -1,3 +1,4 @@
+// v2.1 - Audio button fix (2025)
 "use strict";
 /* ═══════════════════════════════════════════════════════════
    Shared file navigation module (prev / next / shuffle / recurse)
@@ -20,17 +21,43 @@
     if (!fileId || isNaN(fileId)) return;  // not a navigable file
 
     /* Detect which button naming convention is used */
+    // Check for audio buttons FIRST since they're only on audio pages
+    var hasAudioBtns  = document.getElementById('audioPrevBtn') && document.getElementById('audioNextBtn');
     var standardButtons = document.getElementById('prevBtn') && document.getElementById('nextBtn');
-    var audioButtons    = document.getElementById('audioPrevBtn') && document.getElementById('audioNextBtn');
+    var audioButtons    = hasAudioBtns;
 
     if (!standardButtons && !audioButtons) return;  // no nav elements on this page
 
     /* Resolve button references based on naming convention */
-    var prevBtn   = standardButtons ? document.getElementById('prevBtn') : null;
-    var nextBtn   = standardButtons ? document.getElementById('nextBtn') : null;
-    var shuffleBtn = standardButtons ? document.getElementById('shuffleBtn') : (audioButtons ? document.getElementById('audioShuffleBtn') : null);
-    var recurseBtn = standardButtons ? document.getElementById('recurseBtn') : (audioButtons ? document.getElementById('audioRecurseBtn') : null);
-    var navPos   = standardButtons ? document.getElementById('navPos') : (audioButtons ? document.getElementById('navStatus') : null);
+    var prevBtn   = null, nextBtn = null, shuffleBtn = null, recurseBtn = null, navPos = null;
+    
+    if (hasAudioBtns && !standardButtons) {
+        // Audio-only page: use audio-specific IDs
+        console.log('[file-nav] Using AUDIO button refs');
+        prevBtn   = document.getElementById('audioPrevBtn');
+        nextBtn   = document.getElementById('audioNextBtn');
+        shuffleBtn = document.getElementById('audioShuffleBtn');
+        recurseBtn = document.getElementById('audioRecurseBtn');
+        navPos    = document.getElementById('navStatus');
+    } else if (standardButtons) {
+        // Standard page: use standard IDs
+        console.log('[file-nav] Using STANDARD button refs');
+        prevBtn   = document.getElementById('prevBtn');
+        nextBtn   = document.getElementById('nextBtn');
+        shuffleBtn = document.getElementById('shuffleBtn');
+        recurseBtn = document.getElementById('recurseBtn');
+        navPos    = document.getElementById('navPos');
+    } else {
+        // Fallback: try audio
+        console.log('[file-nav] FALLBACK to AUDIO button refs');
+        prevBtn   = document.getElementById('audioPrevBtn');
+        nextBtn   = document.getElementById('audioNextBtn');
+    }
+    
+    if (!prevBtn || !nextBtn) {
+        console.error('[file-nav] Failed to get nav buttons! prev:', !!prevBtn, 'next:', !!nextBtn);
+        return;
+    }
 
     // ── Read state: URL params → localStorage, with sensible defaults ──
     var urlParams = new URLSearchParams(window.location.search);
@@ -141,6 +168,7 @@
     function loadSiblings(fid, sortOverride) {
         if (!fid || !Number.isFinite(fid)) return;
         var url = '/api/siblings/' + fid + buildParams(sortOverride);
+        console.log('[file-nav] Loading siblings from:', url);
 
         fetch(url, { credentials: 'same-origin' })
             .then(function(r) { return r.json(); })
@@ -157,6 +185,7 @@
                 } else if (navPos) {
                     navPos.textContent = '';
                 }
+                console.log('[file-nav] Siblings loaded:', data);
                 // Enable/disable prev/next based on actual navigation targets
                 // When shuffle is ON: check session history; when OFF: use prev_id from siblings
                 var hasPrev = siblingData.prev_id != null || (shuffleOn && canGoBack());
@@ -167,6 +196,11 @@
             })
             .catch(function(err) { console.error('[file-nav] Siblings load error:', err); });
     }
+
+    // ── Debug: log sibling data state ─────────────
+    console.log('[file-nav] Detected', audioButtons ? 'audio' : 'standard', 'buttons');
+    console.log('[file-nav] prevBtn:', !!prevBtn, '| nextBtn:', !!nextBtn);
+    console.log('[file-nav] fileId from config:', fileId);
 
     // ── Navigation helpers (session history tracking) ───────────
     function advanceHistory(stack, idx, fid) {
@@ -189,6 +223,8 @@
     function goBack() {
         if (prevBtn) prevBtn.disabled = true;
 
+        console.log('[file-nav] goBack called, shuffle:', shuffleOn);
+
         if (shuffleOn && shuffleNav.idx > 0) {
             var target = shuffleNav.history[shuffleNav.idx - 1];
             shuffleNav.idx--;
@@ -196,6 +232,7 @@
             saveHistory('shuffle', shuffleNav);
             saveHistory('normal', normalNav);
             /* Route to the correct page based on context */
+            console.log('[file-nav] goBack: shuffling to prev entry:', target, 'idx now:', shuffleNav.idx);
             var isEditor = window.__EDITOR_CONFIG && parseInt(window.__EDITOR_CONFIG.fileId, 10) === fileId;
             if (isEditor) {
                 window.location.href = '/editor/' + target;
@@ -204,11 +241,16 @@
             }
         } else {
             // Sort-order: always use prev_id from sibling data (not session history)
+            console.log('[file-nav] goBack: siblingData:', !!siblingData, '| prev_id:', siblingData ? siblingData.prev_id : 'N/A');
             if (siblingData && siblingData.prev_id != null) {
                 navigateTo(siblingData.prev_id);
+            } else {
+                console.log('[file-nav] goBack: no valid prev target!');
             }
         }
     }
+
+    // ── Debug logging for next button ─────────────
 
     function getPrevEntry(idx) {
         return normalNav.history[idx] || null;
@@ -230,6 +272,8 @@
             // Use sort-order sibling from API
             if (siblingData && siblingData.next_id != null) {
                 navigateTo(siblingData.next_id);
+            } else {
+                console.log('[file-nav] goNext: no next_id! siblingData:', !!siblingData, '| next_id:', siblingData ? siblingData.next_id : 'N/A');
             }
         }
     }
@@ -279,10 +323,14 @@
 
     // ── Wire up prev / next buttons ─────────────────────────────
     if (prevBtn) {
-        prevBtn.addEventListener('click', goBack);
+        prevBtn.addEventListener('click', function(e) {
+            console.log('[file-nav] Prev button clicked, fileId:', fileId);
+            goBack();
+        });
     }
     if (nextBtn) {
         nextBtn.addEventListener('click', function() {
+            console.log('[file-nav] Next button clicked, fileId:', fileId);
             goNext();
         });
     }
@@ -307,6 +355,7 @@
     });
 
     // ── Initial siblings fetch ──────────────────────────────────
+    console.log('[file-nav] Initiating initial siblings fetch for fileId:', fileId);
     loadSiblings(fileId);
 
     // ── Public API: expose navigation functions for other scripts ─
