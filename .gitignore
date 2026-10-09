@@ -1,14 +1,17 @@
-# Virtual environments
+# Virtual environments (all variants)
 venv/
 env/
 ENV/
-.venv
-*.pyc
+.venv/
+.env/
+test_venv/
+.*_venv/
 
-# Python cache
+*.pyc
 __pycache__/
 *.py[cod]
 *$py.class
+*.egg-info/
 
 # Data and vault
 data/
@@ -35,9 +38,6 @@ instance/
 *.sqlite
 *.sqlite3
 
-# Docs (working drafts)
-docs/
-
 # Test coverage & reports
 htmlcov/
 .coverage*
@@ -45,7 +45,6 @@ htmlcov/
 osv/  # pytest-open-files output
 
 # Package/build artifacts
-*.egg-info/
 .eggs/
 dist/
 build/
@@ -62,5 +61,15 @@ yarn-error.log*
 package-lock.json
 yarn.lock
 pnpm-lock.yaml
+*.lock
 
-.DS_Store
+# Media files
+*.{mkv,mp4,avi,mov,wmv,flac,wav,aac,mka,mks,dvd}
+*.srt
+*.ass
+*.sub
+
+# Non-README markdown docs (working drafts)
+docs/*.md
+!docs/README.md
+
