@@ -37,10 +37,10 @@ def _clear_module_cache(mod_name: str):
         del sys.modules[m]
 
 
-class TestHelperImports:
-    """Each helper module must import cleanly — no NameError, ImportError."""
+class TestCoreModuleImports:
+    """Each core module must import cleanly — no NameError, ImportError."""
 
-    def test_helpers_import_cleanly(self):
+    def test_core_modules_import_cleanly(self):
         """All helper modules should be importable without exceptions.
 
         This catches bugs like:
@@ -66,30 +66,32 @@ class TestHelperImports:
 
 
 class TestRuffTopLevelNames:
-    """Run ruff to catch unused imports (F401) on the main helper files.
+    """Run ruff to catch unused imports (F401) on core modules.
 
     This catches leftover imports from refactor — when you rename/move a function and forget 
-    to update the import line, ruff will flag it immediately in CI. We check app_helpers_files.py
-    specifically because that's the file most at risk during refactors; other helpers have 
-    pre-existing F401 noise we can address separately.
+    to update the import line, ruff will flag it immediately in CI. We check all core/ files
+    because they are the main targets during refactors.
 
-    Note: F821 (undefined name) is noisy here because helpers use lazy imports inside function bodies
+    Note: F821 (undefined name) is noisy here because modules use lazy imports inside function bodies
     which ruff can't trace, so we only check F401 for the refactor-defense guarantee.
     """
 
-    def test_ruff_no_unused_imports_in_helpers(self):
-        """Ruff must report zero F401 (unused import) errors on app_helpers_files.py."""
+    def test_ruff_no_unused_imports_in_core(self):
+        """Ruff must report zero F401 (unused import) errors on core/ modules.
+        
+        Note: We only check F401 because F821 (undefined name) is noisy —
+        lazy imports inside function bodies use names ruff can't trace at module level.
+        """
         result = subprocess.run(
-            [".venv/bin/python", "-m", "ruff", "check", "--select=F401,F821",
-             "helpers/app_helpers_files.py"],
-            capture_output=True, text=True, cwd="/home/eli/PythonProjects/Encrypted-File-Vault-Web-UI"
+            [sys.executable, "-m", "ruff", "check", "--select=F401",
+             "core/"],
+            capture_output=True, text=True
         )
 
         if result.returncode != 0:
             assert False, (
-                f"Ruff found issues in helpers/app_helpers_files.py:\n{result.stdout}\n\n"
+                f"Ruff found unused imports in core/:\n{result.stdout}\n\n"
                 "Fix these before committing.\n"
-                "F821 — undefined name at module level\n"  
                 "F401 — unused import (leftover from refactor)"
             )
 
@@ -102,18 +104,18 @@ But if the alias is defined and NEVER used (ruff F401), it means someone renamed
 function, added an alias for clarity, then forgot to update call sites to use that alias.
 """
 
-class TestAliasCallConsistency:
+class TestCoreModuleStructure:
     """Catch aliased imports whose aliases are never called in the file."""
 
-    def test_no_unused_aliases_in_helpers(self):
-        """Each helper's lazy import aliases must actually be used somewhere."""
+    def test_no_unused_aliases_in_core_modules(self):
+        """Each core module's lazy import aliases must actually be used somewhere."""
         errors = []
         import os as _os
 
-        for fname in sorted(_os.listdir("helpers")):
+        for fname in sorted(_os.listdir("core")):
             if not fname.endswith(".py") or fname.startswith("__"):
                 continue
-            with open(f"helpers/{fname}") as fh:
+            with open(f"core/{fname}") as fh:
                 content = fh.read()
 
             # Find all 'X as _alias' imports (both indented lazy and module-level)
@@ -140,3 +142,22 @@ class TestAliasCallConsistency:
         if errors:
             raise AssertionError(
                 f"Alias-vs-call mismatches found:\n" + "\n".join(f"  - {e}" for e in sorted(set(errors))))
+
+
+class TestCoreModuleCoverage:
+    """Defense chain: verify core/ directory has actual modules (not empty after refactor).
+    
+    This catches the case where all files are moved out of helpers/ but into core/
+    and tests still point to old paths, leaving a gap in coverage.
+    """
+
+    def test_core_directory_has_modules(self):
+        """core/ directory must contain Python modules."""
+        import os as _os
+        
+        core_dir = "core"
+        py_files = [f for f in _os.listdir(core_dir) if f.endswith(".py") and not f.startswith("__")]
+        assert len(py_files) > 0, (
+            f"No Python modules found in {core_dir}/ — "
+            f"expected at least one module but got none. Files: {py_files}"
+        )

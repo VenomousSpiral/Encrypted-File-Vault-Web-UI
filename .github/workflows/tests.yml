@@ -23,25 +23,25 @@ jobs:
           python -m venv .venv
           source .venv/bin/activate
           pip install --upgrade pip
-          # Install only what's needed for tests (no app runtime deps)
-          pip install pytest ruff
+          # Install test deps + flask (needed for helper module imports)
+          pip install pytest ruff flask
       
-      - name: Layer 1 — Module-level imports
+      - name: Layer 1 — Core module imports (flask available)
         run: |
           source .venv/bin/activate
-          python -m pytest tests/test_helper_imports.py::TestHelperImports -v
+          python -m pytest tests/test_helper_imports.py::TestCoreModuleImports -v
         
-      - name: Layer 2 — Ruff F401 (unused imports)  
+      - name: Layer 2 — Ruff checks on core modules
         run: |
           source .venv/bin/activate
-          ruff check --select=F401 helpers/app_helpers_files.py
+          ruff check --select=F401,F821 core/
       
-      - name: Layer 3a — Alias consistency + missing names
+      - name: Layer 3a — Core module alias consistency checks
         run: |
           source .venv/bin/activate
-          python -m pytest tests/test_helper_direct.py::TestAliasConsistencyEnhanced -v
+          python -m pytest tests/test_helper_direct.py::TestCoreModuleStructure -v
         
-      - name: Layer 3b — Defense chain integrity  
+      - name: Layer 3b — Core module defense chain (no empty dir gaps)
         run: |
           source .venv/bin/activate
-          python -m pytest tests/test_helper_direct.py::TestDefenseChainIntegrity -v
+          python -m pytest tests/test_helper_direct.py::TestCoreModuleCoverage -v

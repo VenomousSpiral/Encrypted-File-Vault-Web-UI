@@ -144,7 +144,7 @@ def api_overwrite_audio(file_id):
 
 def api_reencode_dir(dir_id):
     """Re-encode all video files in a directory (recursively) for browser playback."""
-    from models import get_file as _gf, list_files as _lf  # noqa: F811  
+    from models import get_file as _gf  # noqa: F811  
     from flask_login import current_user as cu  # noqa: F811
     from .auth import _get_master_key as gmk, _get_encryptor as gen
 
@@ -244,11 +244,9 @@ import config as _config  # noqa: E402, F811 — for VAULT_DIR path resolution
 def config(): return _config  # noqa: E402, F811
 
 from flask import jsonify as _jsonify  # noqa: E402, F811 — module-level reference
-from .auth import _get_master_key, _get_encryptor as _ge  # noqa: E402, F811
 
 def abort(code): return __import__('flask').abort(code)  # noqa: F821 — module-level reference  
 def jsonify(d): return _jsonify(d)
 
 
-from models import get_file as _get_file  # noqa: E402, F811
-from models import clear_audio_cache, has_audio_cache, get_audio_cache_info  # noqa: E402, F811
+from models import get_audio_cache_info  # noqa: E402, F811

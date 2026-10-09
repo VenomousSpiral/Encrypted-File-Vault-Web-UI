@@ -426,7 +426,6 @@ from zipstream import ZipStream, ZIP_DEFLATED  # noqa: E402, F811 — lazy third
 from flask import abort as _abort  # noqa: E402, F811
 def abort(code): return _abort(code)
 
-import config  # noqa: E402, F811 — VAULT_DIR used throughout
 from flask import Response  # noqa: E402, F811
 from flask import jsonify as _jsonify  # noqa: E402, F811
 def jsonify(d): return _jsonify(d)

@@ -183,7 +183,6 @@ def cbz_reader(file_id):
         cbz_prefs = get_cbz_preferences(cu.id, file_id, key=mk)
         return render_template('cbz.html', file=dict(f), cbz_prefs=cbz_prefs)
     except _InvalidTag:
-        from flask import abort as _flask_abort  # noqa: F811
         return jsonify({'error': 'Not found'}), 403
 
 

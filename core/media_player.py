@@ -33,7 +33,6 @@ def _media_category(mime: str) -> str:
 
 def _sort_files(files: list, sort_by: str = 'name') -> list:
     """Sort a list of file dicts by the given preference."""
-    from models import list_files  # noqa: F811
     
     if sort_by == 'name':
         files.sort(key=lambda d: (d.get('name') or '').lower())

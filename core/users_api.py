@@ -112,7 +112,7 @@ def api_create_user():
 def api_delete_user(user_id):
     """Delete a user and all their files (admin only)."""
     from flask_login import current_user as cu  # noqa: F811  
-    from models import get_file_by_name, get_user_by_id as _gui, delete_user
+    from models import get_user_by_id as _gui, delete_user
 
     if user_id == cu.id:
         return jsonify({'error': 'Cannot delete yourself'}), 400
@@ -134,8 +134,7 @@ def api_delete_user(user_id):
 
 def api_reset_password(user_id):
     """Admin resets a user's password; re-wraps that user's own key."""
-    from flask_login import current_user as cu  # noqa: F811  
-    from models import get_file_by_name, get_user_by_id as _gui, update_user_password
+    from models import get_user_by_id as _gui, update_user_password
 
     data = _request.get_json(silent=True) or {}
     password = data.get('password', '')
@@ -166,7 +165,7 @@ def api_reset_password(user_id):
 def api_toggle_admin(user_id):
     """Toggle a user's admin status (admin only)."""
     from flask_login import current_user as cu  # noqa: F811  
-    from models import get_file_by_name, get_user_by_id as _gui, set_user_admin
+    from models import get_user_by_id as _gui, set_user_admin
 
     if user_id == cu.id:
         return jsonify({'error': 'Cannot change your own admin status'}), 400
@@ -182,7 +181,7 @@ def api_change_password():
     """Change the current user's password; re-wraps their own key."""
     from flask_login import current_user as cu  # noqa: F811
     from .auth import _get_master_key as gmk, _get_app_state
-    from models import get_file_by_name, get_user_by_id as _gui, update_user_password
+    from models import get_user_by_id as _gui, update_user_password
     from crypto import encrypt_master_key
     from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -223,11 +222,10 @@ def config(): return _config  # noqa: E402, F811
 
 from flask import jsonify as _jsonify, Response as _Response  # noqa: E402, F811 — module-level reference
 from flask import request as _request  # noqa: E402, F811
-import os as _os  # noqa: E402, F811
 def abort(code): return __import__('flask').abort(code)  # noqa: F821 — module-level reference  
 def jsonify(d): return _jsonify(d)
 
 
 from flask import render_template as _render_template  # noqa: E402, F811
 def render_template(tmpl, **kw): return _render_template(tmpl, **kw)
-from .auth import _get_master_key, _get_app_state
+from .auth import _get_app_state
