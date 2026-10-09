@@ -42,7 +42,7 @@
 }
 @keyframes eqPulse {
     0%   { height: 6px; opacity: 0.3; }
-    50%  { height: calc(min(200px, 40vh) * 0.4); opacity: 0.7; }
+    50%   { height: calc(min(200px, 40vh) * 0.4); opacity: 0.7; }
     100% { height: calc(min(200px, 40vh)); opacity: 1; }
 }
 
@@ -237,24 +237,47 @@
 
 {% if mime.startswith('video/') %}
 <!-- HLS Video Player (on-demand, Jellyfin-style) -->
-<div id="hlsContainer" class="flex-grow-1 position-relative bg-black d-flex flex-column">
-    <div id="hlsLoading" class="position-absolute top-0 start-0 w-100 h-100 d-flex flex-column align-items-center justify-content-center" style="z-index:10;background:#000">
-        <div class="spinner-border text-primary mb-3" style="width:3rem;height:3rem" role="status"><span class="visually-hidden">Loading…</span></div>
-        <h5 class="text-light" id="loadingTitle">Preparing…</h5>
-        <p class="text-secondary small mb-1" id="loadingDetail">Starting session</p>
-        <div style="width:280px;max-width:90%" class="mt-2"><div class="progress" style="height:6px;background:#333"><div class="progress-bar bg-primary" id="loadingProgress" role="progressbar" style="width:0%;transition:width .3s"></div></div><p class="text-secondary small text-center mt-1 mb-0" id="loadingPct"></p></div>
+<div id="hlsContainer" class="flex-grow-1 position-relative bg-black d-flex flex-column player-page-layout">
+    <!-- CSS for centered video with proper letterboxing on portrait screens -->
+    <style>
+        #videoCenterer {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+        }
+        #hlsVideo {
+            max-width: 100% !important;
+            max-height: 100% !important;
+            object-fit: contain !important;
+        }
+    </style>
+
+    <!-- Video area with centered letterboxing -->
+    <div id="videoCenterer" class="flex-grow-1 position-relative">
+        <!-- Loading overlay -->
+        <div id="hlsLoading" class="position-absolute top-0 start-0 w-100 h-100 d-flex flex-column align-items-center justify-content-center" style="z-index:10;background:#000">
+            <div class="spinner-border text-primary mb-3" style="width:3rem;height:3rem" role="status"><span class="visually-hidden">Loading…</span></div>
+            <h5 class="text-light" id="loadingTitle">Preparing…</h5>
+            <p class="text-secondary small mb-1" id="loadingDetail">Starting session</p>
+            <div style="width:280px;max-width:90%" class="mt-2"><div class="progress" style="height:6px;background:#333"><div class="progress-bar bg-primary" id="loadingProgress" role="progressbar" style="width:0%;transition:width .3s"></div></div><p class="text-secondary small text-center mt-1 mb-0" id="loadingPct"></p></div>
+        </div>
+
+        <!-- Error overlay -->
+        <div id="hlsError" class="d-none position-absolute top-0 start-0 w-100 h-100 d-flex flex-column align-items-center justify-content-center" style="z-index:11;background:#000">
+            <i class="fas fa-exclamation-triangle fa-3x text-danger mb-3"></i>
+            <h5 class="text-light">Playback Error</h5>
+            <p class="text-danger" id="hlsErrorMsg"></p>
+            <button class="btn btn-sm btn-outline-danger" onclick="location.reload()"><i class="fas fa-redo me-1"></i>Retry</button>
+        </div>
+
+        <!-- Video element (centered inside videoCenterer) -->
+        <video id="hlsVideo"></video>
     </div>
 
-    <div id="hlsError" class="d-none position-absolute top-0 start-0 w-100 h-100 d-flex flex-column align-items-center justify-content-center" style="z-index:11;background:#000">
-        <i class="fas fa-exclamation-triangle fa-3x text-danger mb-3"></i>
-        <h5 class="text-light">Playback Error</h5>
-        <p class="text-danger" id="hlsErrorMsg"></p>
-        <button class="btn btn-sm btn-outline-danger" onclick="location.reload()"><i class="fas fa-redo me-1"></i>Retry</button>
-    </div>
-
-    <video id="hlsVideo" style="width:100%;flex:1;min-height:0;background:#000"></video>
-
-    <!-- Settings panel -->
+    <!-- Settings panel (outside centerer, positioned via absolute in CSS) -->
     <div id="settingsPanel" class="settings-panel d-none">
         <div class="settings-header"><span class="fw-semibold">Settings</span><button id="settingsClose" class="btn btn-sm btn-link text-light p-0"><i class="fas fa-times"></i></button></div>
         <div id="audioTrackGroup" class="settings-row d-none"><label class="settings-label"><i class="fas fa-volume-up me-1"></i>Audio</label><select id="audioTrackSelect" class="settings-select"></select></div>
@@ -273,7 +296,7 @@
         <div class="ctrl-progress" id="progressBar"><div class="ctrl-progress-buffer" id="bufferBar"></div><div class="ctrl-progress-fill" id="progressFill"></div></div>
         <div class="ctrl-vol-wrap">
             <button class="ctrl-btn" id="muteBtn" title="Mute"><i class="fas fa-volume-up" id="volIcon"></i></button>
-            <input type="range" class="ctrl-vol-slider" id="volSlider" min="0" max="1" step="0.05" value="1">
+            <input type="range" class="ctrl-vol-slider" id="volSlider" min=0 max=1 step=0.05 value=1>
         </div>
         <button class="ctrl-btn" id="settingsBtn" title="Settings"><i class="fas fa-cog"></i></button>
         <button class="ctrl-btn" id="fullscreenBtn" title="Fullscreen"><i class="fas fa-expand" id="fsIcon"></i></button>
@@ -339,7 +362,7 @@
             <span id="navStatus" style="font-size:.75rem;color:var(--v-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px"></span>
             <div class="vol-wrap">
                 <button class="ctrl-sm" id="audioMuteBtn" title="Mute" style="width:auto;padding:0 .5rem;font-size:.9rem"><i class="fas fa-volume-up" id="audioVolIcon"></i></button>
-                <input type="range" class="volume-slider" id="audioVolumeSlider" min="0" max="1" step="0.05" value="1">
+                <input type="range" class="volume-slider" id="audioVolumeSlider" min=0 max=1 step=0.05 value=1>
             </div>
         </div>
     </div>
