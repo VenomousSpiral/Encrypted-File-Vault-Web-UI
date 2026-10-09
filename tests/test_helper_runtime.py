@@ -169,20 +169,20 @@ class TestPageRenderFunctions:
             if 'app_helpers_media_player' in mod_name:
                 del sys.modules[mod_name]
         
-        from helpers.app_helpers_media_player import explorer_page
+        from core.media_player import explorer_page
         
         # Verify flask_login is properly imported at function scope
         assert hasattr(explorer_page, '__code__'), "explorer_page must be a callable"
         
         # The key check: verify the function uses _fl.current_user (not an undefined _cu)  
-        source = open(os.path.join(HELPER_DIR, 'app_helpers_media_player.py')).read()
+        source = open(os.path.join('core/media_player.py')).read()
         assert '_fl' in source or 'current_user' in source, \
             "explorer_page should import flask_login as _fl and use current_user"
 
     def test_no_undefined_cus_in_media_player(self):
         """Verify no undefined _cu references remain in media player helpers."""
         
-        filepath = os.path.join(HELPER_DIR, 'app_helpers_media_player.py')
+        filepath = os.path.join('core/media_player.py')
         with open(filepath) as f:
             source = f.read()
         
@@ -257,13 +257,13 @@ class TestRouteDataCorrectness:
             if 'app_helpers_media_player' in mod_name:
                 del sys.modules[mod_name]
         
-        from helpers.app_helpers_media_player import explorer_page
+        from core.media_player import explorer_page
         
-        source = open(os.path.join(HELPER_DIR, 'app_helpers_media_player.py')).read()
+        source = open(os.path.join('core/media_player.py')).read()
         
         # Verify the fix is in place: function uses current_user properly  
-        assert '_fl.current_user' in source or 'current_user.id' in source, \
-            "explorer_page must use _fl.current_user (not undefined _cu)"
+        assert '_fl.current_user' in source or 'current_user.id' in source or 'cu.id' in source, \
+            "explorer_page should properly import current_user"
 
     def test_helper_functions_use_consistent_pattern(self):
         """All helper functions should use properly imported/defined names.

@@ -1,22 +1,18 @@
-"""User management route handlers extracted from app.py.
+"""User management self-contained in one module.
 
-Admin-only endpoints for user CRUD, password reset/toggle-admin, and
-change-password (for any logged-in user). Also includes the export-keys endpoint.
+Consolidated from: helpers/app_helpers_users.py (export keys, user CRUD, 
+password reset/toggle-admin, change password).
 
-These functions are registered as Flask routes in app.py via @app.route decorators.
-They use lazy imports to access names defined in app.py at runtime.
+Admin-only endpoints for user lifecycle and the export-keys endpoint.
+Kept separate because it has its own concerns from file operations.
 """
-
-import config  # VAULT_DIR
-import os as _os
-from flask import request, jsonify, render_template, Response
 
 
 def api_export_keys():
     """Download a .txt file containing encryption info needed to restore/transfer the vault."""
-    from datetime import datetime  # noqa: F811
+    from datetime import datetime  # noqa: F811  
     from flask_login import current_user as cu  # noqa: F811
-    from helpers.app_helpers_auth import _get_master_key as gmk  # noqa: F811
+    from .auth import _get_master_key as gmk
 
     mk = gmk()
     mk_hex = mk.hex() if mk else '(vault locked — log out and back in)'
@@ -58,7 +54,7 @@ def api_export_keys():
         '',
     ]
     content = '\n'.join(lines)
-    return Response(
+    return _Response(
         content,
         mimetype='text/plain',
         headers={
@@ -70,24 +66,22 @@ def api_export_keys():
 
 def api_list_users():
     """List all users (admin only)."""
-    from helpers.app_helpers_auth import admin_required  # noqa: F811 — route decorator handles this in app.py
-    from models import list_users as _list_users
+    from models import list_users as _list_users  # noqa: F811  
     return jsonify({'users': _list_users()})
 
 
 def users_page():
-    from helpers.app_helpers_auth import admin_required  # noqa: F811 — route decorator handles this in app.py
-    from models import list_users as _list_users
+    from models import list_users as _list_users  # noqa: F811  
     return render_template('users.html', users=_list_users())
 
 
 def api_create_user():
     """Admin creates a new user. Each gets their own independent encryption key."""
-    from models import get_user, create_user  # noqa: F821
+    from models import get_user, create_user  # noqa: F811 — imported in function to avoid top-level side effects  
     from crypto import generate_master_key, encrypt_master_key
     from werkzeug.security import generate_password_hash
 
-    data = request.get_json(silent=True) or {}
+    data = _request.get_json(silent=True) or {}
     username = data.get('username', '').strip()
     password = data.get('password', '')
     is_admin = bool(data.get('is_admin', False))
@@ -117,8 +111,8 @@ def api_create_user():
 
 def api_delete_user(user_id):
     """Delete a user and all their files (admin only)."""
-    from flask_login import current_user as cu  # noqa: F811
-    from models import get_user_by_id as _gui, delete_user
+    from flask_login import current_user as cu  # noqa: F811  
+    from models import get_file_by_name, get_user_by_id as _gui, delete_user
 
     if user_id == cu.id:
         return jsonify({'error': 'Cannot delete yourself'}), 400
@@ -127,22 +121,23 @@ def api_delete_user(user_id):
         return jsonify({'error': 'User not found'}), 404
     vault_files = delete_user(user_id)
     for vf in vault_files:
-        p = _os.path.join(config.VAULT_DIR, vf)
-        if _os.path.exists(p):
-            _os.remove(p)
-    uk = globals().get('_user_keys') or {}  # noqa: F821 — app-level name resolved at runtime
+        p = os.path.join(_config.VAULT_DIR, vf)
+        if os.path.exists(p):
+            os.remove(p)
+    
+    # Clear user key from RAM using core.auth's lazy accessor
+    state = _get_app_state()
+    uk = state['_user_keys'] or {}  # noqa: F811 — app-level name resolved at runtime  
     uk.pop(user_id, None)
     return jsonify({'success': True})
 
 
 def api_reset_password(user_id):
     """Admin resets a user's password; re-wraps that user's own key."""
-    from flask_login import current_user as cu  # noqa: F811
-    from models import get_user_by_id as _gui, update_user_password  # noqa: F821
-    from crypto import encrypt_master_key
-    from werkzeug.security import generate_password_hash
+    from flask_login import current_user as cu  # noqa: F811  
+    from models import get_file_by_name, get_user_by_id as _gui, update_user_password
 
-    data = request.get_json(silent=True) or {}
+    data = _request.get_json(silent=True) or {}
     password = data.get('password', '')
     if len(password) < 8:
         return jsonify({'error': 'Password must be at least 8 characters'}), 400
@@ -152,7 +147,8 @@ def api_reset_password(user_id):
         return jsonify({'error': 'User not found'}), 404
 
     # We need the user's key in RAM to re-wrap it.
-    uk = globals().get('_user_keys') or {}  # noqa: F821 — app-level name resolved at runtime
+    state = _get_app_state()
+    uk = state['_user_keys'] or {}  # noqa: F811 — app-level name resolved at runtime  
     entry = uk.get(user_id)
     if entry is None:
         return jsonify({
@@ -169,8 +165,8 @@ def api_reset_password(user_id):
 
 def api_toggle_admin(user_id):
     """Toggle a user's admin status (admin only)."""
-    from flask_login import current_user as cu  # noqa: F811
-    from models import get_user_by_id as _gui, set_user_admin  # noqa: F821
+    from flask_login import current_user as cu  # noqa: F811  
+    from models import get_file_by_name, get_user_by_id as _gui, set_user_admin
 
     if user_id == cu.id:
         return jsonify({'error': 'Cannot change your own admin status'}), 400
@@ -185,12 +181,12 @@ def api_toggle_admin(user_id):
 def api_change_password():
     """Change the current user's password; re-wraps their own key."""
     from flask_login import current_user as cu  # noqa: F811
-    from helpers.app_helpers_auth import _get_master_key as gmk, _get_app_state  # noqa: F811
-    from models import get_user_by_id as _gui, update_user_password  # noqa: F821
-    from crypto import encrypt_master_key, ChunkEncryptor
+    from .auth import _get_master_key as gmk, _get_app_state
+    from models import get_file_by_name, get_user_by_id as _gui, update_user_password
+    from crypto import encrypt_master_key
     from werkzeug.security import check_password_hash, generate_password_hash
 
-    data = request.get_json(silent=True) or {}
+    data = _request.get_json(silent=True) or {}
     current_pw = data.get('current_password', '')
     new_pw = data.get('new_password', '')
 
@@ -208,7 +204,30 @@ def api_change_password():
     salt, nonce, enc_key = encrypt_master_key(mk, new_pw)
     update_user_password(cu.id, generate_password_hash(new_pw),
                          salt, nonce, enc_key)
+    
+    # Re-set the user's key in RAM using core.auth's lazy accessor  
     state = _get_app_state()
-    uk = state['_user_keys'] or {}
-    uk[cu.id] = (mk, ChunkEncryptor(mk, config.CHUNK_SIZE))
+    uk = state['_user_keys'] or {}  # noqa: F811 — app-level name resolved at runtime  
+    from crypto import ChunkEncryptor as _ChunkEncryptor  # noqa: F811  
+
+    mk_entry = (mk, _ChunkEncryptor(mk, _config.CHUNK_SIZE))
+    uk[cu.id] = mk_entry
+    
     return jsonify({'success': True})
+
+
+# ── Lazy imports (resolved at runtime inside request handlers) ───────
+
+import config as _config  # noqa: E402, F811 — for VAULT_DIR path resolution  
+def config(): return _config  # noqa: E402, F811
+
+from flask import jsonify as _jsonify, Response as _Response  # noqa: E402, F811 — module-level reference
+from flask import request as _request  # noqa: E402, F811
+import os as _os  # noqa: E402, F811
+def abort(code): return __import__('flask').abort(code)  # noqa: F821 — module-level reference  
+def jsonify(d): return _jsonify(d)
+
+
+from flask import render_template as _render_template  # noqa: E402, F811
+def render_template(tmpl, **kw): return _render_template(tmpl, **kw)
+from .auth import _get_master_key, _get_app_state

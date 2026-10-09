@@ -18,13 +18,14 @@ import sys
 
 # Modules we want to verify can be imported without raising NameError/ImportError  
 HELPER_MODULES = [
-    "helpers.app_helpers_files",
-    "helpers.app_helpers_auth", 
-    "helpers.app_helpers_hls",
-    "helpers.app_helpers_media_player",
-    "helpers.app_helpers_streaming",
-    "helpers.app_helpers_text",
-    "helpers.app_helpers_users",
+    "core.auth",
+    "core.files_api",  
+    "core.streaming",
+    "core.media_player",
+    "core.text_editor",
+    "core.preferences",
+    "core.audio_reencode",
+    "core.users_api",
 ]
 
 

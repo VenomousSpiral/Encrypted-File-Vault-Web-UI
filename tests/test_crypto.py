@@ -18,7 +18,7 @@ if sys_path not in __import__('sys').path:
     __import__('sys').path.insert(0, sys_path)
 
 # Import crypto.py primitives
-from helpers.app_helpers_auth import _get_master_key  # noqa: F401
+from core.auth import _get_master_key  # noqa: F401
 
 from crypto import (  # noqa: E402
     HEADER_FORMAT,
