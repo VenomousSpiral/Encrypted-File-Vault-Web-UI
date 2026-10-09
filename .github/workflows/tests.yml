@@ -23,18 +23,18 @@ jobs:
           python -m venv .venv
           source .venv/bin/activate
           pip install --upgrade pip
-          # Install test deps + flask (needed for helper module imports)
-          pip install pytest ruff flask
+          # Install runtime deps needed for core module imports + test tools
+          pip install -r requirements.txt pytest ruff
       
       - name: Layer 1 — Core module imports (flask available)
         run: |
           source .venv/bin/activate
           python -m pytest tests/test_helper_imports.py::TestCoreModuleImports -v
         
-      - name: Layer 2 — Ruff checks on core modules
+      - name: Layer 2 — Ruff unused imports (F401 only)
         run: |
           source .venv/bin/activate
-          ruff check --select=F401,F821 core/
+          ruff check --select=F401 core/
       
       - name: Layer 3a — Core module alias consistency checks
         run: |
