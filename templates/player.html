@@ -304,7 +304,7 @@
 </div>
 
 <script src="{{ url_for('static', filename='lib/hlsjs/hls.min.js') }}"></script>
-<script>window.__PLAYER_CONFIG = { fileId: {{ file.id }}, mime: '{{ file.mime_type }}', position: {{ vprefs.position|default(0, true) }}, audio_idx: {{ vprefs.audio_idx|default(-1, true) }}, sub_idx: {{ vprefs.sub_idx|default(-1, true) }}, sub_offset: {{ vprefs.sub_offset|default(0, true) }} };</script>
+<script>window.__PLAYER_CONFIG = { fileId: {{ file.id }}, mime: '{{ file.mime_type }}', position: {{ vprefs.position|default(0, true) }}, audio_idx: {{ vprefs.audio_idx|default(-1, true) }}, sub_idx: {{ vprefs.sub_idx|default(-1, true) }}, sub_offset: {{ vprefs.sub_offset|default(0, true) }} }; window.__USER_PREFS = { audioLang: '{{ prefs.default_audio_lang | default('', true)|replace("'", "\\'") }}', subLang: '{{ prefs.default_subtitle_lang | default('', true)|replace("'", "\\'") }}', skipAmount: {{ prefs.skip_amount|default(15, true) }}, subOffset: {{ prefs.default_subtitle_offset|default(0.0, true) }} };</script>
 <script src="{{ url_for('static', filename='js/player.js') }}"></script>
 <!-- Shared navigation (prev/next/shuffle/recurse for all file types) -->
 <script src="{{ url_for('static', filename='js/file-nav.js') }}"></script>

@@ -113,12 +113,13 @@
             sub_offset: cfg.sub_offset ?? 0,
         };
 
-        // Account-level defaults (rendered server-side)
+        // User's account-level defaults (loaded from settings, rendered server-side)
+        const USER_PREFS = window.__USER_PREFS || {};
         const PREFS = {
-            audioLang:  'en',
-            subLang:    '',
-            skipAmount: 15,
-            subOffset:  0,
+            audioLang:  USER_PREFS.audioLang ?? '',
+            subLang:    USER_PREFS.subLang ?? '',
+            skipAmount: USER_PREFS.skipAmount ?? 15,
+            subOffset:  USER_PREFS.subOffset ?? 0,
         };
 
         // Save per-video prefs to server
@@ -488,8 +489,8 @@
                 }
                 if (!subInitialized) {
                     subInitialized = true;
-                    if (PREFS.subLang === '' && bestSubIdx < 0 && subTracks.length > 0) {
-                        // No lang pref and no stored idx — default to first track
+                    if (bestSubIdx < 0 && PREFS.subLang !== '') {
+                        // No per-video override — try user's default subtitle lang
                         const m = subTracks.findIndex(t => {
                             const l = (t.lang||'').toLowerCase();
                             return l.startsWith(PREFS.subLang) || PREFS.subLang.startsWith(l);
@@ -498,7 +499,9 @@
                     }
                     if (bestSubIdx >= 0) { hls.subtitleTrack = bestSubIdx; hls.subtitleDisplay = true; }
                     subSelect.value = bestSubIdx;
-                    if (subtitleOffset !== 0) setTimeout(() => applySubOffset(), 800);
+                    // Use per-video offset if set, else fall back to user default
+                    let subtitleOffset = (VP.sub_offset !== 0) ? VP.sub_offset : PREFS.subOffset;
+                    if (subtitleOffset !== 0 && bestSubIdx >= 0) setTimeout(() => applySubOffset(), 800);
                 }
                 subSelect.onchange = () => {
                     const val = parseInt(subSelect.value);
@@ -522,13 +525,14 @@
                     if (t.is_default) opt.selected = true;
                     audioSelect.appendChild(opt);
                 });
-                if (PREFS.audioLang) {
-                    const m = data.audio.find(t => (t.language||'').toLowerCase().startsWith(PREFS.audioLang));
-                    if (m) audioSelect.value = m.track_index;
-                }
+                // Per-video override takes precedence
                 const nativeAudioIdx = VP.audio_idx ?? -1;
                 if (nativeAudioIdx >= 0) {
                     audioSelect.value = data.audio.find(t => t.track_index === nativeAudioIdx)?.track_index || '';
+                } else if (PREFS.audioLang !== '') {
+                    // No per-video override — try user's default audio lang
+                    const m = data.audio.find(t => (t.language||'').toLowerCase().startsWith(PREFS.audioLang));
+                    if (m) audioSelect.value = m.track_index;
                 }
                 audioSelect.onchange = () => {
                     saveVideoPrefs({ audio_idx: parseInt(audioSelect.value) });
@@ -544,13 +548,14 @@
                     opt.textContent = t.label || t.language || ('Subtitle ' + t.track_index);
                     subSelect.appendChild(opt);
                 });
-                if (PREFS.subLang) {
-                    const m = data.subtitles.find(t => (t.language||'').toLowerCase().startsWith(PREFS.subLang));
-                    if (m) subSelect.value = m.track_index;
-                }
+                // Per-video override takes precedence over user default lang
                 const nativeSubIdx = VP.sub_idx ?? -1;
                 if (nativeSubIdx >= 0) {
                     subSelect.value = data.subtitles.find(t => t.track_index === nativeSubIdx)?.track_index || '-1';
+                } else if (PREFS.subLang !== '') {
+                    // No per-video override — try user's default subtitle lang
+                    const m = data.subtitles.find(t => (t.language||'').toLowerCase().startsWith(PREFS.subLang));
+                    if (m) subSelect.value = m.track_index;
                 }
                 subSelect.onchange = () => {
                     saveVideoPrefs({ sub_idx: parseInt(subSelect.value) });
