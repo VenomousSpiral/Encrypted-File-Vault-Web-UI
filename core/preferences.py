@@ -98,6 +98,10 @@ def api_set_video_prefs(file_id):
     allowed = {}
     if 'position' in data:
         allowed['position'] = float(data['position'])
+    if 'audio_idx' in data:
+        allowed['audio_idx'] = int(data['audio_idx'])
+    if 'sub_idx' in data:
+        allowed['sub_idx'] = int(data['sub_idx'])
     if 'sub_offset' in data:
         allowed['sub_offset'] = float(data['sub_offset'])
 

@@ -108,6 +108,8 @@
         const cfg = window.__PLAYER_CONFIG || {};
         const VP = {
             position:   cfg.position ?? 0,
+            audio_idx:  cfg.audio_idx ?? -1,
+            sub_idx:    cfg.sub_idx ?? -1,
             sub_offset: cfg.sub_offset ?? 0,
         };
 
@@ -455,9 +457,14 @@
                     if (bestAudioIdx !== hls.audioTrack) hls.audioTrack = bestAudioIdx;
                     audioSelect.value = bestAudioIdx;
                 }
+                // Apply stored per-video preference on first load
+                if (VP.audio_idx >= 0 && VP.audio_idx < audioTracks.length) {
+                    bestAudioIdx = VP.audio_idx;
+                }
                 audioSelect.onchange = () => {
                     const idx = parseInt(audioSelect.value);
                     hls.audioTrack = idx;
+                    saveVideoPrefs({ audio_idx: idx });
                 };
             }
 
@@ -475,9 +482,14 @@
                     opt.dataset.lang = lang;
                     subSelect.appendChild(opt);
                 });
+                // Apply stored per-video preference on first load
+                if (VP.sub_idx >= 0 && VP.sub_idx < subTracks.length) {
+                    bestSubIdx = VP.sub_idx;
+                }
                 if (!subInitialized) {
                     subInitialized = true;
-                    if (PREFS.subLang) {
+                    if (PREFS.subLang === '' && bestSubIdx < 0 && subTracks.length > 0) {
+                        // No lang pref and no stored idx — default to first track
                         const m = subTracks.findIndex(t => {
                             const l = (t.lang||'').toLowerCase();
                             return l.startsWith(PREFS.subLang) || PREFS.subLang.startsWith(l);
@@ -492,6 +504,7 @@
                     const val = parseInt(subSelect.value);
                     hls.subtitleTrack = val;
                     hls.subtitleDisplay = (val >= 0);
+                    saveVideoPrefs({ sub_idx: val });
                     if (val >= 0 && subtitleOffset !== 0) setTimeout(() => applySubOffset(), 500);
                 };
             }
@@ -513,7 +526,13 @@
                     const m = data.audio.find(t => (t.language||'').toLowerCase().startsWith(PREFS.audioLang));
                     if (m) audioSelect.value = m.track_index;
                 }
-                audioSelect.onchange = () => {};  // no per-video save
+                const nativeAudioIdx = VP.audio_idx ?? -1;
+                if (nativeAudioIdx >= 0) {
+                    audioSelect.value = data.audio.find(t => t.track_index === nativeAudioIdx)?.track_index || '';
+                }
+                audioSelect.onchange = () => {
+                    saveVideoPrefs({ audio_idx: parseInt(audioSelect.value) });
+                };
             }
             if (data.subtitles && data.subtitles.length > 0) {
                 subGroup.classList.remove('d-none');
@@ -529,7 +548,13 @@
                     const m = data.subtitles.find(t => (t.language||'').toLowerCase().startsWith(PREFS.subLang));
                     if (m) subSelect.value = m.track_index;
                 }
-                subSelect.onchange = () => {};  // no per-video save
+                const nativeSubIdx = VP.sub_idx ?? -1;
+                if (nativeSubIdx >= 0) {
+                    subSelect.value = data.subtitles.find(t => t.track_index === nativeSubIdx)?.track_index || '-1';
+                }
+                subSelect.onchange = () => {
+                    saveVideoPrefs({ sub_idx: parseInt(subSelect.value) });
+                };
             }
         }
     })();
