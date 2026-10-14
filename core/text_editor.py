@@ -209,3 +209,7 @@ from flask import request as _request  # noqa: E402, F811 — module-level refer
 
 from flask import jsonify as _jsonify  # noqa: E402, F811
 def jsonify(d): return _jsonify(d)
+
+from flask import render_template as _render_template  # noqa: E402, F811
+def render_template(*args, **kwargs):
+    return _render_template(*args, **kwargs)
