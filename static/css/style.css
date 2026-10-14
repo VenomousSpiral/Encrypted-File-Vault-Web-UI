@@ -25,8 +25,16 @@ body {
 /* ── toolbar / breadcrumbs ───────────────────────────────────────── */
 .toolbar { min-height: 48px; }
 
-/* Horizontally scrollable toolbar actions on mobile – prevents overflow off-page */
 @media (max-width: 767px) {
+    /* Toolbar dropdowns must use fixed positioning to break out of the horizontal-scroll container
+       and always render at the top edge, bleeding into the file section below. */
+    #sortBtn + .dropdown-menu,
+    #searchWrap + .dropdown-menu {
+        position: fixed !important;
+        z-index: 9999;
+    }
+
+    /* Horizontally scrollable toolbar actions on mobile – prevents overflow off-page */
     .toolbar-actions-scroll {
         max-height: none !important;
         margin-left: -0.5rem;
